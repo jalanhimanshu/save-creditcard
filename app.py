@@ -89,9 +89,6 @@ with tab1:
         with st.expander("➕ Add a New Card"):
             with st.form("add_card_form"):
                 new_card_name = st.text_input("Card Name (e.g., Axis Magnus)")
-                # Default program list from optimizer
-                prog_list = list(optimizer.BASELINE_CPP.keys())
-                new_program = st.selectbox("Reward Program", prog_list)
                 new_init_bal = st.number_input("Initial Balance", min_value=0, step=1000)
                 new_spend_unit = st.number_input("Spend Unit (₹)", min_value=50, value=100, step=50)
                 
@@ -102,9 +99,9 @@ with tab1:
                         with get_db_connection() as conn:
                             cursor = conn.cursor()
                             
-                            # Insert card with a temporary link
+                            # Insert card with temporary program and link
                             cursor.execute("INSERT INTO cards (card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?)", 
-                                         (new_card_name, new_program, new_init_bal, new_spend_unit, "Pending AI Discovery..."))
+                                         (new_card_name, "Pending AI Discovery...", new_init_bal, new_spend_unit, "Pending AI Discovery..."))
                             new_card_id = cursor.lastrowid
                             
                             # Fetch real data via AI
@@ -112,9 +109,10 @@ with tab1:
                             ai_data = auto_discover_card_details(new_card_name)
                             
                             if "error" not in ai_data:
-                                # Update real link
+                                # Update real program and link
+                                real_program = ai_data.get("reward_program", "Unknown Program")
                                 real_link = ai_data.get("reward_link", "Not Found")
-                                cursor.execute("UPDATE cards SET reward_link = ? WHERE card_id = ?", (real_link, new_card_id))
+                                cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", (real_program, real_link, new_card_id))
                                 
                                 # Insert real multipliers
                                 mults = ai_data.get("multipliers", [])

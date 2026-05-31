@@ -327,6 +327,7 @@ def auto_discover_card_details(card_name: str) -> dict:
     You are a credit card data extractor. I need the reward structure for the Indian credit card: '{card_name}'.
     Return a pure JSON object with no markdown formatting. It must have this exact structure:
     {{
+        "reward_program": "Name of the points program (e.g. Edge Rewards, Amex MR, NeuCoins, Cashback)",
         "reward_link": "https://www.bank.com/official-card-page",
         "multipliers": [
             {{"category": "dining", "multiplier": 5}},
