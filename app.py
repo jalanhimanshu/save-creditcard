@@ -82,6 +82,69 @@ with tab1:
             st.success(f"Successfully updated {selected_card} balance to {new_balance}.")
             st.rerun()
 
+    st.subheader("Manage Portfolio")
+    colM1, colM2 = st.columns(2)
+    
+    with colM1:
+        with st.expander("➕ Add a New Card"):
+            with st.form("add_card_form"):
+                new_card_name = st.text_input("Card Name (e.g., Axis Magnus)")
+                # Default program list from optimizer
+                prog_list = list(optimizer.BASELINE_CPP.keys())
+                new_program = st.selectbox("Reward Program", prog_list)
+                new_init_bal = st.number_input("Initial Balance", min_value=0, step=1000)
+                new_spend_unit = st.number_input("Spend Unit (₹)", min_value=50, value=100, step=50)
+                
+                add_submitted = st.form_submit_button("Add Card to Portfolio")
+                
+                if add_submitted and new_card_name:
+                    with st.spinner("AI is discovering actual reward multipliers & links for this card..."):
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            
+                            # Insert card with a temporary link
+                            cursor.execute("INSERT INTO cards (card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?)", 
+                                         (new_card_name, new_program, new_init_bal, new_spend_unit, "Pending AI Discovery..."))
+                            new_card_id = cursor.lastrowid
+                            
+                            # Fetch real data via AI
+                            from agents import auto_discover_card_details
+                            ai_data = auto_discover_card_details(new_card_name)
+                            
+                            if "error" not in ai_data:
+                                # Update real link
+                                real_link = ai_data.get("reward_link", "Not Found")
+                                cursor.execute("UPDATE cards SET reward_link = ? WHERE card_id = ?", (real_link, new_card_id))
+                                
+                                # Insert real multipliers
+                                mults = ai_data.get("multipliers", [])
+                                for m in mults:
+                                    cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
+                                                 (new_card_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
+                            else:
+                                # Fallback to 1x catch_all if AI fails
+                                cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
+                                             (new_card_id, "catch_all", 1.0))
+                                             
+                            conn.commit()
+                    st.success(f"Added {new_card_name} with actual AI-discovered multipliers!")
+                    st.rerun()
+                    
+    with colM2:
+        with st.expander("❌ Remove a Card"):
+            with st.form("remove_card_form"):
+                card_to_remove = st.selectbox("Select Card to Delete", df_cards['card_name'].tolist())
+                remove_submitted = st.form_submit_button("Delete Permanently")
+                
+                if remove_submitted:
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        # ON DELETE CASCADE handles the multipliers automatically
+                        cursor.execute("DELETE FROM cards WHERE card_name = ?", (card_to_remove,))
+                        conn.commit()
+                    st.success(f"Permanently removed {card_to_remove}.")
+                    st.rerun()
+
 # ==========================================
 # TAB 2: "WHICH CARD TO USE" RECOMMENDATION ENGINE
 # ==========================================

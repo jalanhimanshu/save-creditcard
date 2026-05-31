@@ -310,6 +310,53 @@ def ask_savepoints_ai(user_question: str) -> str:
     except Exception as e:
         return f"AI System Error: The model endpoint could not be reached or failed. Detail: {e}"
 
+def auto_discover_card_details(card_name: str) -> dict:
+    """
+    Pings Gemini to discover the exact category multipliers and official web link for a newly added card.
+    Returns a dict with 'multipliers' and 'reward_link'.
+    """
+    import requests
+    import json
+    import re
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"error": "API key not set"}
+        
+    prompt = f"""
+    You are a credit card data extractor. I need the reward structure for the Indian credit card: '{card_name}'.
+    Return a pure JSON object with no markdown formatting. It must have this exact structure:
+    {{
+        "reward_link": "https://www.bank.com/official-card-page",
+        "multipliers": [
+            {{"category": "dining", "multiplier": 5}},
+            {{"category": "travel", "multiplier": 3}},
+            {{"category": "catch_all", "multiplier": 1}}
+        ]
+    }}
+    Important: Always include a 'catch_all' category. Multipliers should be numbers representing the points earned per spend unit. Use categories like: dining, travel, online_shopping, fuel, catch_all.
+    """
+    
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        data = {"contents": [{"parts": [{"text": prompt}]}]}
+        
+        response = requests.post(url, headers=headers, json=data)
+        response_json = response.json()
+        
+        if "candidates" not in response_json:
+            return {"error": f"API Error: {response_json}"}
+            
+        text = response_json["candidates"][0]["content"]["parts"][0]["text"]
+        # Strip markdown fences
+        text = re.sub(r'```json\n?', '', text)
+        text = re.sub(r'```', '', text).strip()
+        
+        return json.loads(text)
+    except Exception as e:
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     # Test execution
     run_redemption_offer_sync()
