@@ -279,6 +279,14 @@ def ask_savepoints_ai(user_question: str) -> str:
             multipliers = cursor.fetchall()
             mult_context = "\n".join([f"- {m[0]} earns {m[2]}x on {m[1]}" for m in multipliers])
             
+            cursor.execute("""
+                SELECT source_program, target_partner, transfer_ratio, est_value_cpp 
+                FROM transfer_partners 
+                WHERE source_program IN (SELECT DISTINCT program FROM cards)
+            """)
+            partners = cursor.fetchall()
+            partners_context = "\n".join([f"- {p[0]} -> {p[1]}: Ratio is {p[2]}, estimated value is ₹{p[3]} per point" for p in partners])
+            
         system_context = f"""
         You are the 'SavePoints AI Advisor', an expert financial assistant built to outperform 'SaveSage'.
         You MUST base your answers on the user's specific portfolio below.
@@ -288,6 +296,9 @@ def ask_savepoints_ai(user_question: str) -> str:
         
         Their card multipliers:
         {mult_context}
+        
+        Their best redemption options and transfer partners:
+        {partners_context}
         
         User Question: {user_question}
         

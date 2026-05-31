@@ -157,7 +157,7 @@ with tab1:
 with get_db_connection() as conn:
     df_programs = pd.read_sql_query("SELECT DISTINCT program FROM cards", conn)
 db_programs = [p for p in df_programs['program'].tolist() if p != "Pending AI Discovery..."]
-all_programs = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
+all_programs = sorted(list(set(db_programs)))
 
 # ==========================================
 # TAB 2: "WHICH CARD TO USE" RECOMMENDATION ENGINE
