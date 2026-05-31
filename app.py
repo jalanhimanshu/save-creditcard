@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from database import get_db_connection
 import optimizer
-from agents import ask_savepoints_ai
+from agents import ask_savepoints_ai, auto_discover_card_details
 
 st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
 
@@ -104,8 +104,6 @@ with tab1:
                                          (new_card_name, "Pending AI Discovery...", new_init_bal, new_spend_unit, "Pending AI Discovery..."))
                             new_card_id = cursor.lastrowid
                             
-                            # Fetch real data via AI
-                            from agents import auto_discover_card_details
                             ai_data = auto_discover_card_details(new_card_name)
                             
                             if "error" not in ai_data:
