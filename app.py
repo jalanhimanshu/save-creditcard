@@ -108,7 +108,7 @@ with tab1:
                             
                             if "error" not in ai_data:
                                 # Update real program and link
-                                real_program = ai_data.get("reward_program", "Unknown Program")
+                                real_program = ai_data.get("reward_program", f"{new_card_name} Rewards")
                                 real_link = ai_data.get("reward_link", "Not Found")
                                 cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", (real_program, real_link, new_card_id))
                                 
@@ -117,13 +117,17 @@ with tab1:
                                 for m in mults:
                                     cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
                                                  (new_card_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
+                                st.success(f"✅ Added **{new_card_name}** ({real_program}) with AI-discovered multipliers!")
                             else:
-                                # Fallback to 1x catch_all if AI fails
+                                # AI failed — set a sensible fallback program name and 1x multiplier
+                                fallback_program = f"{new_card_name} Rewards"
+                                cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", 
+                                             (fallback_program, "https://www.google.com/search?q=" + new_card_name.replace(" ", "+") + "+credit+card", new_card_id))
                                 cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
                                              (new_card_id, "catch_all", 1.0))
+                                st.warning(f"⚠️ Added **{new_card_name}** with 1x base rate. AI discovery failed — refresh the page and edit the card to update it.")
                                              
                             conn.commit()
-                    st.success(f"Added {new_card_name} with actual AI-discovered multipliers!")
                     st.rerun()
                     
     with colM2:

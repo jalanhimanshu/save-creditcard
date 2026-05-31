@@ -343,11 +343,21 @@ def auto_discover_card_details(card_name: str) -> dict:
         headers = {"Content-Type": "application/json"}
         data = {"contents": [{"parts": [{"text": prompt}]}]}
         
-        response = requests.post(url, headers=headers, json=data)
-        response_json = response.json()
-        
-        if "candidates" not in response_json:
-            return {"error": f"API Error: {response_json}"}
+        # Retry up to 3 times to handle transient 503 errors
+        import time
+        last_error = None
+        for attempt in range(3):
+            response = requests.post(url, headers=headers, json=data)
+            response_json = response.json()
+            
+            if "candidates" in response_json:
+                break  # success
+            
+            last_error = response_json
+            if attempt < 2:
+                time.sleep(2)  # wait 2s before retry
+        else:
+            return {"error": f"API Error after 3 attempts: {last_error}"}
             
         text = response_json["candidates"][0]["content"]["parts"][0]["text"]
         # Strip markdown fences
