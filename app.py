@@ -96,38 +96,44 @@ with tab1:
                 
                 if add_submitted and new_card_name:
                     with st.spinner("AI is discovering actual reward multipliers & links for this card..."):
-                        with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            
-                            # Insert card with temporary program and link
-                            cursor.execute("INSERT INTO cards (card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?)", 
-                                         (new_card_name, "Pending AI Discovery...", new_init_bal, new_spend_unit, "Pending AI Discovery..."))
-                            new_card_id = cursor.lastrowid
-                            
-                            ai_data = auto_discover_card_details(new_card_name)
-                            
-                            if "error" not in ai_data:
-                                # Update real program and link
-                                real_program = ai_data.get("reward_program", f"{new_card_name} Rewards")
-                                real_link = ai_data.get("reward_link", "Not Found")
-                                cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", (real_program, real_link, new_card_id))
+                        try:
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
                                 
-                                # Insert real multipliers
-                                mults = ai_data.get("multipliers", [])
-                                for m in mults:
+                                # Insert card with temporary program and link
+                                cursor.execute("INSERT INTO cards (card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?)", 
+                                             (new_card_name, "Pending AI Discovery...", new_init_bal, new_spend_unit, "Pending AI Discovery..."))
+                                new_card_id = cursor.lastrowid
+                            
+                                ai_data = auto_discover_card_details(new_card_name)
+                                
+                                if "error" not in ai_data:
+                                    # Update real program and link
+                                    real_program = ai_data.get("reward_program", f"{new_card_name} Rewards")
+                                    real_link = ai_data.get("reward_link", "Not Found")
+                                    cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", (real_program, real_link, new_card_id))
+                                    
+                                    # Insert real multipliers
+                                    mults = ai_data.get("multipliers", [])
+                                    for m in mults:
+                                        cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
+                                                     (new_card_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
+                                    st.success(f"✅ Added **{new_card_name}** ({real_program}) with AI-discovered multipliers!")
+                                else:
+                                    # AI failed — set a sensible fallback program name and 1x multiplier
+                                    fallback_program = f"{new_card_name} Rewards"
+                                    cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", 
+                                                 (fallback_program, "https://www.google.com/search?q=" + new_card_name.replace(" ", "+") + "+credit+card", new_card_id))
                                     cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
-                                                 (new_card_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
-                                st.success(f"✅ Added **{new_card_name}** ({real_program}) with AI-discovered multipliers!")
+                                                 (new_card_id, "catch_all", 1.0))
+                                    st.warning(f"⚠️ Added **{new_card_name}** with 1x base rate. AI discovery failed — refresh the page and edit the card to update it.")
+                                                 
+                                conn.commit()
+                        except Exception as e:
+                            if "UNIQUE constraint" in str(e):
+                                st.error(f"❌ A card named **{new_card_name}** already exists in your portfolio.")
                             else:
-                                # AI failed — set a sensible fallback program name and 1x multiplier
-                                fallback_program = f"{new_card_name} Rewards"
-                                cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", 
-                                             (fallback_program, "https://www.google.com/search?q=" + new_card_name.replace(" ", "+") + "+credit+card", new_card_id))
-                                cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
-                                             (new_card_id, "catch_all", 1.0))
-                                st.warning(f"⚠️ Added **{new_card_name}** with 1x base rate. AI discovery failed — refresh the page and edit the card to update it.")
-                                             
-                            conn.commit()
+                                st.error(f"❌ Error adding card: {e}")
                     st.rerun()
                     
     with colM2:
@@ -144,6 +150,14 @@ with tab1:
                         conn.commit()
                     st.success(f"Permanently removed {card_to_remove}.")
                     st.rerun()
+
+# ==========================================
+# SHARED: Dynamic program list for all tabs
+# ==========================================
+with get_db_connection() as conn:
+    df_programs = pd.read_sql_query("SELECT DISTINCT program FROM cards", conn)
+db_programs = [p for p in df_programs['program'].tolist() if p != "Pending AI Discovery..."]
+all_programs = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
 
 # ==========================================
 # TAB 2: "WHICH CARD TO USE" RECOMMENDATION ENGINE
@@ -201,14 +215,9 @@ with tab3:
     
     st.subheader("Live Calculator Suite")
     
-    with get_db_connection() as conn:
-        df_programs = pd.read_sql_query("SELECT DISTINCT program FROM cards", conn)
-    db_programs = [p for p in df_programs['program'].tolist() if p != "Pending AI Discovery..."]
-    programs = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
-    
     col3, col4, col5 = st.columns(3)
     with col3:
-        program_to_redeem = st.selectbox("Program", programs)
+        program_to_redeem = st.selectbox("Program", all_programs)
     with col4:
         cash_cost = st.number_input("Cash Cost (₹)", min_value=0.0, value=5000.0, step=500.0)
     with col5:
@@ -237,7 +246,7 @@ with tab4:
     with colB:
         flight_points = st.number_input("Flight Points Required", min_value=1, value=15000, step=1000, key="flight_points")
     with colC:
-        programs_list = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
+        programs_list = all_programs
         flight_program = st.selectbox("Points Program", programs_list, key="flight_program")
         
     if st.button("Evaluate Flight Deal"):
@@ -284,7 +293,7 @@ with tab5:
             st.markdown(prompt)
             
         with st.chat_message("assistant"):
-            with st.spinner("Analyzing your 19 cards..."):
+            with st.spinner(f"Analyzing your {len(df_cards)} cards..."):
                 response = ask_savepoints_ai(prompt)
                 st.markdown(response)
         st.session_state.messages.append({"role": "assistant", "content": response})

@@ -20,7 +20,8 @@ BASELINE_CPP = {
     'Fuel Points': 0.25,
     'Scapia Coins': 0.20,
     'Equitas Rewards': 0.20,
-    'Cashback': 1.0
+    'Cashback': 1.0,
+    'Edge Rewards': 0.50
 }
 
 def get_baseline_cpp(program: str) -> float:
