@@ -1,0 +1,225 @@
+import streamlit as st
+import pandas as pd
+from database import get_db_connection
+import optimizer
+from agents import ask_savepoints_ai
+
+st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
+
+st.title("SavePoints Rewards Dashboard - Indian Market")
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Dashboard Overview", "Which Card to Use", "Redemption Calculator", "Smarter Flight Bookings", "Ask SavePoints AI"])
+
+# ==========================================
+# TAB 1: DASHBOARD OVERVIEW
+# ==========================================
+with tab1:
+    st.header("Dashboard Overview")
+    
+    # Display AI Sync Status
+    try:
+        with open("last_sync.txt", "r") as f:
+            last_sync = f.read().strip()
+    except FileNotFoundError:
+        last_sync = "Never (Run scheduler.py to initialize)"
+        
+    st.info(f"🤖 **Market Intelligence Agent Sync:** Last updated on {last_sync}")
+    
+    colA, colB = st.columns(2)
+    with colA:
+        try:
+            with open("market_report.md", "r", encoding="utf-8") as f:
+                market_content = f.read()
+            with st.expander("📉 **View Latest Market Devaluations & Alerts (from CardExpert.in)**", expanded=True):
+                st.markdown(market_content)
+        except FileNotFoundError:
+            pass
+        
+        try:
+            with open("latest_offers.md", "r", encoding="utf-8") as f:
+                offers_content = f.read()
+            with st.expander("🎁 **View Today's Active Redemption Offers (from AI Agent)**", expanded=True):
+                st.markdown(offers_content)
+        except FileNotFoundError:
+            pass
+
+    with colB:
+        st.subheader("🐦 Live Social Media Alerts")
+        st.info("Scanning @card24_ai, @savingssimpl, @rewardsraja, @ccg33k every 60 mins.")
+        try:
+            with open("twitter_alerts.md", "r", encoding="utf-8") as f:
+                twitter_content = f.read()
+            st.markdown(twitter_content)
+        except FileNotFoundError:
+            st.write("Waiting for first 60-minute scan...")
+    
+    # Fetch all cards dynamically
+    with get_db_connection() as conn:
+        df_cards = pd.read_sql_query("SELECT card_id, card_name, program, current_balance FROM cards", conn)
+    
+    # Calculate standalone values and combined net worth
+    df_cards['baseline_cpp_rs'] = df_cards['program'].apply(optimizer.get_baseline_cpp)
+    df_cards['cash_value_rs'] = df_cards['current_balance'] * df_cards['baseline_cpp_rs']
+    
+    total_net_worth = df_cards['cash_value_rs'].sum()
+    st.metric("Combined Net Worth", f"₹{total_net_worth:,.2f}")
+    
+    st.subheader("Portfolio")
+    # Using width parameter to resolve deprecation warning
+    st.dataframe(df_cards[['card_name', 'program', 'current_balance', 'cash_value_rs']], width=800)
+    
+    st.subheader("Update Balance")
+    with st.form("update_balance_form"):
+        selected_card = st.selectbox("Select Card", df_cards['card_name'].tolist())
+        new_balance = st.number_input("New Point Balance", min_value=0, step=1000)
+        submitted = st.form_submit_button("Update Balance")
+        
+        if submitted:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("UPDATE cards SET current_balance = ? WHERE card_name = ?", (new_balance, selected_card))
+                conn.commit()
+            st.success(f"Successfully updated {selected_card} balance to {new_balance}.")
+            st.rerun()
+
+# ==========================================
+# TAB 2: "WHICH CARD TO USE" RECOMMENDATION ENGINE
+# ==========================================
+with tab2:
+    st.header("Which Card to Use")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        # Dynamically fetch unique categories for the dropdown, adding defaults
+        with get_db_connection() as conn:
+            df_cats = pd.read_sql_query("SELECT DISTINCT category FROM multipliers WHERE category != 'catch_all'", conn)
+        categories = df_cats['category'].tolist()
+        categories.extend(['gas', 'grocery', 'upi']) 
+        
+        selected_category = st.selectbox("Transaction Category", list(set(categories)))
+    with col2:
+        spend_amount = st.number_input("Transaction Spend Amount (₹)", min_value=0.0, value=10000.0, step=500.0)
+        
+    if spend_amount > 0:
+        ranked_cards = optimizer.suggest_best_card(selected_category, spend_amount)
+        if ranked_cards:
+            best_card = ranked_cards[0]
+            # Hero Element
+            st.success(f"🏆 **#1 Recommended Card:** {best_card['card_name']} ({best_card['program']}) - Yields **₹{best_card['yield_rupees']:.2f}**")
+            
+            st.subheader("Comparative Analysis")
+            df_ranked = pd.DataFrame(ranked_cards)
+            
+            # Display horizontal bar chart
+            st.bar_chart(df_ranked.set_index('card_name')['yield_rupees'])
+            
+            # Display data table using width
+            st.dataframe(df_ranked[['card_name', 'program', 'multiplier', 'spend_unit', 'yield_rupees']], width=800)
+
+# ==========================================
+# TAB 3: REDEMPTION CALCULATOR & TRANSFER PARTNERS
+# ==========================================
+with tab3:
+    st.header("Redemption Calculator & Transfer Partners")
+    
+    try:
+        with open("latest_offers.md", "r", encoding="utf-8") as f:
+            offers_content = f.read()
+        st.info("💡 **AI Agent Tip:** Always check the active transfer bonuses below before making a redemption!")
+        with st.expander("🎁 **Today's Active Redemption Offers**", expanded=True):
+            st.markdown(offers_content)
+    except FileNotFoundError:
+        pass
+    
+    st.subheader("Transfer Partners Directory")
+    with get_db_connection() as conn:
+        df_partners = pd.read_sql_query("SELECT source_program, target_partner, transfer_ratio, est_value_cpp FROM transfer_partners", conn)
+    st.dataframe(df_partners, width=800)
+    
+    st.subheader("Live Calculator Suite")
+    
+    programs = list(optimizer.BASELINE_CPP.keys())
+    
+    col3, col4, col5 = st.columns(3)
+    with col3:
+        program_to_redeem = st.selectbox("Program", programs)
+    with col4:
+        cash_cost = st.number_input("Cash Cost (₹)", min_value=0.0, value=5000.0, step=500.0)
+    with col5:
+        points_required = st.number_input("Points Required", min_value=1, value=10000, step=1000)
+        
+    result = optimizer.evaluate_redemption(program_to_redeem, cash_cost, points_required)
+    
+    st.write("### Results")
+    st.metric("Achieved CPP (₹)", f"₹{result['achieved_cpp']:.2f}")
+    
+    if result['rating'] == "Great Value":
+        st.success(f"🌟 **{result['rating']}**! (Baseline: ₹{result['baseline_cpp']:.2f})")
+    else:
+        st.error(f"⚠️ **{result['rating']}** (Baseline: ₹{result['baseline_cpp']:.2f})")
+
+# ==========================================
+# TAB 4: SMARTER FLIGHT BOOKINGS
+# ==========================================
+with tab4:
+    st.header("Smarter Flight Bookings: Cash vs Points")
+    st.markdown("Before booking a flight, compare the true cost of using your points versus paying in cash with your best travel card.")
+    
+    colA, colB, colC = st.columns(3)
+    with colA:
+        flight_cash = st.number_input("Flight Cash Price (₹)", min_value=0.0, value=12000.0, step=500.0, key="flight_cash")
+    with colB:
+        flight_points = st.number_input("Flight Points Required", min_value=1, value=15000, step=1000, key="flight_points")
+    with colC:
+        # Re-use programs list from Tab 3
+        programs_list = list(optimizer.BASELINE_CPP.keys())
+        flight_program = st.selectbox("Points Program", programs_list, key="flight_program")
+        
+    if st.button("Evaluate Flight Deal"):
+        res = optimizer.evaluate_flight_deal(flight_cash, flight_points, flight_program)
+        
+        st.markdown("---")
+        if res['winner'] == "Cash":
+            st.success(f"🏆 **SMARTER DEAL: PAY WITH CASH!** You save ₹{res['savings']:.2f} by hoarding your points and earning rewards instead.")
+        else:
+            st.success(f"🏆 **SMARTER DEAL: USE YOUR POINTS!** You save ₹{res['savings']:.2f} by using points instead of paying cash.")
+            
+        c1, c2 = st.columns(2)
+        with c1:
+            st.info("### 💳 Path 1: Pay with Cash")
+            st.markdown(f"**Sticker Price:** ₹{res['cash_cost']:.2f}")
+            st.markdown(f"**Best Card to Use:** {res['best_card_name']}")
+            st.markdown(f"**Hidden Rewards Earned:** ₹{res['cash_yield']:.2f}")
+            st.metric("Effective Cash Price", f"₹{res['effective_cash_cost']:.2f}")
+            
+        with c2:
+            st.warning("### ✈️ Path 2: Pay with Points")
+            st.markdown(f"**Points Required:** {res['points_cost']:,}")
+            st.markdown(f"**Baseline Value:** ₹{res['baseline_cpp']:.2f} per point")
+            st.markdown("**Hidden Cost of Burned Points:**")
+            st.metric("Effective Points Value", f"₹{res['effective_points_value_rs']:.2f}")
+
+# ==========================================
+# TAB 5: ASK SAVEPOINTS AI
+# ==========================================
+with tab5:
+    st.header("💬 Ask SavePoints AI (The 'Savvy' Killer)")
+    st.markdown("Ask any question about your portfolio. *E.g., 'I am spending ₹50k on Amazon, which card should I use?'*")
+    
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+        
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+            
+    if prompt := st.chat_input("Ask about your credit cards..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+            
+        with st.chat_message("assistant"):
+            with st.spinner("Analyzing your 19 cards..."):
+                response = ask_savepoints_ai(prompt)
+                st.markdown(response)
+        st.session_state.messages.append({"role": "assistant", "content": response})

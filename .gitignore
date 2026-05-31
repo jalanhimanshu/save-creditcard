@@ -1,0 +1,7 @@
+.env
+savepoints.db
+__pycache__/
+*.pyc
+*.md
+!README.md
+last_sync.txt
