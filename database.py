@@ -175,7 +175,7 @@ def seed_data(conn):
         ('Yes Rewards', 'Air India Maharaja', '10:1', 0.10),
         ('IndusInd Rewards', 'Club Vistara', '1:1', 0.80),
         ('IndusInd Rewards', 'Cash Credit (Indulge)', '1 Pt = ₹1', 1.00),
-        ('Adani Rewardz', 'Adani One Flights/Duty-Free', '1 Pt = ₹1', 1.00),
+        ('Adani Rewardz', 'Adani One Flights/Duty-Free', '4 Pts = ₹1', 0.25),
         ('MyCash', 'MakeMyTrip Bookings', '1 Pt = ₹1', 1.00),
         ('Scapia Coins', 'Scapia App Flights', '5 Pts = ₹1', 0.20),
         ('Fuel Points', 'IndianOil Fuel Outlets', '4 Pts = ₹1', 0.25),
