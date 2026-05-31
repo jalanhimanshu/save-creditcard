@@ -210,7 +210,11 @@ with tab3:
     
     st.subheader("Transfer Partners Directory")
     with get_db_connection() as conn:
-        df_partners = pd.read_sql_query("SELECT source_program, target_partner, transfer_ratio, est_value_cpp FROM transfer_partners", conn)
+        df_partners = pd.read_sql_query("""
+            SELECT t.source_program, t.target_partner, t.transfer_ratio, t.est_value_cpp 
+            FROM transfer_partners t
+            WHERE t.source_program IN (SELECT DISTINCT program FROM cards)
+        """, conn)
     st.dataframe(df_partners, width=800)
     
     st.subheader("Live Calculator Suite")
