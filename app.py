@@ -201,7 +201,10 @@ with tab3:
     
     st.subheader("Live Calculator Suite")
     
-    programs = list(optimizer.BASELINE_CPP.keys())
+    with get_db_connection() as conn:
+        df_programs = pd.read_sql_query("SELECT DISTINCT program FROM cards", conn)
+    db_programs = [p for p in df_programs['program'].tolist() if p != "Pending AI Discovery..."]
+    programs = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
     
     col3, col4, col5 = st.columns(3)
     with col3:
@@ -234,8 +237,7 @@ with tab4:
     with colB:
         flight_points = st.number_input("Flight Points Required", min_value=1, value=15000, step=1000, key="flight_points")
     with colC:
-        # Re-use programs list from Tab 3
-        programs_list = list(optimizer.BASELINE_CPP.keys())
+        programs_list = sorted(list(set(list(optimizer.BASELINE_CPP.keys()) + db_programs)))
         flight_program = st.selectbox("Points Program", programs_list, key="flight_program")
         
     if st.button("Evaluate Flight Deal"):
