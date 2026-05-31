@@ -153,8 +153,18 @@ def seed_data(conn):
     # Insert Transfer Partners
     transfer_partners_data = [
         ('Amex MR (India)', 'Taj Hotels', '2:1', 0.50),
+        ('Amex MR (India)', 'Marriott Bonvoy', '1:1', 0.50),
+        ('Amex MR (India)', 'Club Vistara', '3:1', 0.25),
         ('HDFC Reward Points', 'InterMiles', '1:1', 0.30),
-        ('SBI Rewardz', 'Club Vistara', '1:1', 0.80)
+        ('HDFC Reward Points', 'KrisFlyer', '1:1', 1.50),
+        ('HDFC Reward Points', 'Accor Live Limitless', '1:1', 1.80),
+        ('SBI Rewardz', 'Club Vistara', '1:1', 0.80),
+        ('Edge Rewards', 'KrisFlyer', '5:4', 1.20),
+        ('Edge Rewards', 'Club Vistara', '5:4', 0.80),
+        ('Edge Rewards', 'Marriott Bonvoy', '2:1', 0.50),
+        ('Citibank PremierMiles', 'Flying Blue', '1:1', 1.00),
+        ('Citibank PremierMiles', 'Club Vistara', '1:1', 0.80),
+        ('NeuCoins', 'Tata Neu', '1:1', 1.00)
     ]
     cursor.executemany("INSERT INTO transfer_partners (source_program, target_partner, transfer_ratio, est_value_cpp) VALUES (?, ?, ?, ?)", transfer_partners_data)
     
