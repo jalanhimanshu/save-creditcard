@@ -12,7 +12,7 @@ BASELINE_CPP = {
     'HSBC Rewards': 0.20,
     'IDFC Rewards': 0.25,
     'ICICI Rewards': 0.25,
-    'Adani Rewardz': 1.0,
+    'Adani Rewardz': 0.25,
     'MyCash': 1.0,
     'IndusInd Rewards': 1.0,
     'Yes Rewards': 0.25,
