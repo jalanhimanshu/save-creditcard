@@ -6,6 +6,28 @@ from agents import ask_savepoints_ai, auto_discover_card_details
 
 st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
 
+import time
+import threading
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def trigger_background_sync():
+    from agents import run_daily_market_sync, run_redemption_offer_sync, run_twitter_sync
+    def run_sync_tasks():
+        try:
+            run_daily_market_sync()
+            run_redemption_offer_sync()
+            run_twitter_sync()
+        except Exception as e:
+            pass
+    thread = threading.Thread(target=run_sync_tasks, daemon=True)
+    thread.start()
+    return time.time()
+
+current_sync_time = trigger_background_sync()
+if 'last_toast_time' not in st.session_state or st.session_state['last_toast_time'] != current_sync_time:
+    st.toast("🔄 Running hourly AI market sync in the background...")
+    st.session_state['last_toast_time'] = current_sync_time
+
 st.title("SavePoints Rewards Dashboard - Indian Market")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["Dashboard Overview", "Which Card to Use", "Redemption Calculator", "Smarter Flight Bookings", "Ask SavePoints AI"])
@@ -21,7 +43,7 @@ with tab1:
         with open("last_sync.txt", "r") as f:
             last_sync = f.read().strip()
     except FileNotFoundError:
-        last_sync = "Never (Run scheduler.py to initialize)"
+        last_sync = "Never (Background sync is starting now)"
         
     st.info(f"🤖 **Market Intelligence Agent Sync:** Last updated on {last_sync}")
     
