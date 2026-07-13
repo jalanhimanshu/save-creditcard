@@ -6,3 +6,4 @@ langchain-google-genai
 apscheduler
 python-dotenv
 requests
+streamlit-cookies-controller
