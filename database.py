@@ -30,6 +30,15 @@ def init_db():
         ''')
         
         cursor.execute('''
+            CREATE TABLE IF NOT EXISTS session_tokens (
+                token TEXT PRIMARY KEY,
+                user_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
+            )
+        ''')
+        
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS cards (
                 card_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,

@@ -29,18 +29,11 @@ if 'last_toast_time' not in st.session_state or st.session_state['last_toast_tim
     st.session_state['last_toast_time'] = current_sync_time
 
 import hashlib
-from streamlit_cookies_controller import CookieController
-
-controller = CookieController()
+import uuid
 
 def hash_password(password):
     salt = "savepoints_salt_"
     return hashlib.sha256((salt + password).encode()).hexdigest()
-
-# Load cookies if present (these arrive on the second render cycle)
-cookie_user = controller.get('auth_user_id')
-cookie_role = controller.get('auth_role')
-cookie_username = controller.get('auth_username')
 
 if 'user_id' not in st.session_state:
     st.session_state.user_id = None
@@ -49,12 +42,23 @@ if 'role' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state.username = None
 
-# If session is logged out but we just got cookies from the frontend, log them in!
-if st.session_state.user_id is None and cookie_user is not None:
-    st.session_state.user_id = cookie_user
-    st.session_state.role = cookie_role
-    st.session_state.username = cookie_username
-    st.rerun()
+# Streamlit native persistent session using query parameters and database
+token = st.query_params.get('session_id')
+if token and st.session_state.user_id is None:
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT u.user_id, u.username, u.role 
+            FROM users u
+            JOIN session_tokens s ON u.user_id = s.user_id
+            WHERE s.token = ?
+        """, (token,))
+        user = cursor.fetchone()
+        if user:
+            st.session_state.user_id = user[0]
+            st.session_state.username = user[1]
+            st.session_state.role = user[2]
+            st.rerun()
 
 if not st.session_state.user_id:
     st.title("SavePoints Rewards Dashboard")
@@ -75,9 +79,10 @@ if not st.session_state.user_id:
                     st.session_state.role = user[1]
                     st.session_state.username = l_user
                     
-                    controller.set('auth_user_id', user[0])
-                    controller.set('auth_role', user[1])
-                    controller.set('auth_username', l_user)
+                    new_token = str(uuid.uuid4())
+                    cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                    conn.commit()
+                    st.query_params['session_id'] = new_token
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
@@ -105,9 +110,10 @@ if not st.session_state.user_id:
                         st.session_state.role = user[1]
                         st.session_state.username = s_user
                         
-                        controller.set('auth_user_id', user[0])
-                        controller.set('auth_role', user[1])
-                        controller.set('auth_username', s_user)
+                        new_token = str(uuid.uuid4())
+                        cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                        conn.commit()
+                        st.query_params['session_id'] = new_token
                         st.rerun()
                 except sqlite3.IntegrityError:
                     st.error("Username already exists!")
@@ -118,9 +124,13 @@ with col_title:
     st.title(f"SavePoints Rewards Dashboard - Welcome {st.session_state.username}!")
 with col_logout:
     def logout():
-        controller.remove('auth_user_id')
-        controller.remove('auth_role')
-        controller.remove('auth_username')
+        token = st.query_params.get('session_id')
+        if token:
+            with get_db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM session_tokens WHERE token = ?", (token,))
+                conn.commit()
+        st.query_params.clear()
         st.session_state.clear()
         
     st.button("Logout", on_click=logout)
