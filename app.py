@@ -361,7 +361,12 @@ with tab3:
         query = """
             SELECT t.source_program, t.target_partner, t.transfer_ratio, t.est_value_cpp 
             FROM transfer_partners t
-            WHERE t.source_program IN (SELECT DISTINCT program FROM cards WHERE user_id = ?)
+            WHERE t.source_program IN (
+                SELECT DISTINCT cm.program 
+                FROM user_cards uc 
+                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+                WHERE uc.user_id = ?
+            )
         """
         df_partners = pd.read_sql_query(query, conn, params=(st.session_state.user_id,))
     st.dataframe(df_partners, width=800)
