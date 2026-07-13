@@ -189,7 +189,12 @@ with tab1:
     
     # Fetch all cards dynamically
     with get_db_connection() as conn:
-        df_cards = pd.read_sql_query("SELECT card_id, card_name, program, current_balance FROM cards WHERE user_id = ?", conn, params=(st.session_state.user_id,))
+        df_cards = pd.read_sql_query("""
+            SELECT uc.id, cm.card_name, cm.program, uc.current_balance 
+            FROM user_cards uc 
+            JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+            WHERE uc.user_id = ?
+        """, conn, params=(st.session_state.user_id,))
     
     # Calculate standalone values and combined net worth
     df_cards['baseline_cpp_rs'] = df_cards['program'].apply(optimizer.get_baseline_cpp)
@@ -211,7 +216,9 @@ with tab1:
         if submitted:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("UPDATE cards SET current_balance = ? WHERE card_name = ? AND user_id = ?", (new_balance, selected_card, st.session_state.user_id))
+                cursor.execute("SELECT meta_id FROM card_metadata WHERE card_name = ?", (selected_card,))
+                m_id = cursor.fetchone()[0]
+                cursor.execute("UPDATE user_cards SET current_balance = ? WHERE meta_id = ? AND user_id = ?", (new_balance, m_id, st.session_state.user_id))
                 conn.commit()
             st.success(f"Successfully updated {selected_card} balance to {new_balance}.")
             st.rerun()
@@ -221,74 +228,54 @@ with tab1:
     
     with colM1:
         with st.expander("➕ Add a New Card"):
-            add_mode = st.radio("Add Method", ["AI Auto-Discovery", "Manual Entry"])
-            if add_mode == "AI Auto-Discovery":
-                with st.form("add_card_form_ai"):
-                    new_card_name = st.text_input("Card Name (e.g., Axis Magnus)")
+            with get_db_connection() as conn:
+                df_global_cards = pd.read_sql_query("SELECT card_name, meta_id FROM card_metadata ORDER BY card_name", conn)
+            
+            add_mode = st.radio("Add Method", ["Select from Global Catalog", "Request Unlisted Card"])
+            
+            if add_mode == "Select from Global Catalog":
+                with st.form("add_card_form_global"):
+                    selected_global = st.selectbox("Choose a Card", df_global_cards['card_name'].tolist())
                     new_init_bal = st.number_input("Initial Balance", min_value=0, step=1000)
                     new_spend_unit = st.number_input("Spend Unit (₹)", min_value=50, value=100, step=50)
                     
-                    add_submitted = st.form_submit_button("Add Card to Portfolio")
-                    
-                    if add_submitted and new_card_name:
-                        with st.spinner("AI is discovering actual reward multipliers & links for this card..."):
+                    if st.form_submit_button("Add to Portfolio"):
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            m_id = df_global_cards.loc[df_global_cards['card_name'] == selected_global, 'meta_id'].values[0]
                             try:
-                                with get_db_connection() as conn:
-                                    cursor = conn.cursor()
-                                    cursor.execute("INSERT INTO cards (user_id, card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?, ?)", 
-                                                 (st.session_state.user_id, new_card_name, "Pending AI Discovery...", new_init_bal, new_spend_unit, "Pending AI Discovery..."))
-                                    new_card_id = cursor.lastrowid
-                                
-                                    ai_data = auto_discover_card_details(new_card_name)
-                                    
-                                    if "error" not in ai_data:
-                                        real_program = ai_data.get("reward_program", f"{new_card_name} Rewards")
-                                        real_link = ai_data.get("reward_link", "Not Found")
-                                        cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", (real_program, real_link, new_card_id))
-                                        
-                                        mults = ai_data.get("multipliers", [])
-                                        for m in mults:
-                                            cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
-                                                         (new_card_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
-                                        st.success(f"✅ Added **{new_card_name}** ({real_program}) with AI-discovered multipliers!")
-                                    else:
-                                        fallback_program = f"{new_card_name} Rewards"
-                                        cursor.execute("UPDATE cards SET program = ?, reward_link = ? WHERE card_id = ?", 
-                                                     (fallback_program, "https://www.google.com/search?q=" + new_card_name.replace(" ", "+") + "+credit+card", new_card_id))
-                                        cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
-                                                     (new_card_id, "catch_all", 1.0))
-                                        st.warning(f"⚠️ Added **{new_card_name}** with 1x base rate. AI discovery failed — refresh the page and edit the card to update it.")
-                                                     
-                                    conn.commit()
-                            except Exception as e:
-                                if "UNIQUE constraint" in str(e):
-                                    st.error(f"❌ A card named **{new_card_name}** already exists in your portfolio.")
-                                else:
-                                    st.error(f"❌ Error adding card: {e}")
+                                cursor.execute("INSERT INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (?, ?, ?, ?)",
+                                             (st.session_state.user_id, int(m_id), new_init_bal, new_spend_unit))
+                                conn.commit()
+                                st.success(f"✅ Added {selected_global} to your portfolio!")
+                            except sqlite3.IntegrityError:
+                                st.error("❌ You already have this card in your portfolio.")
                         st.rerun()
             else:
-                with st.form("add_card_form_manual"):
-                    m_card_name = st.text_input("Card Name")
-                    m_program = st.text_input("Reward Program Name")
-                    m_init_bal = st.number_input("Initial Balance", min_value=0, step=1000)
-                    m_spend_unit = st.number_input("Spend Unit (₹)", min_value=50, value=100, step=50)
-                    m_base_mult = st.number_input("Base Multiplier (x)", min_value=0.1, value=1.0, step=0.1)
-                    m_submit = st.form_submit_button("Save Card")
+                with st.form("add_card_form_request"):
+                    req_card_name = st.text_input("Card Name (e.g., SBI Cashback)")
+                    req_init_bal = st.number_input("Initial Balance", min_value=0, step=1000)
+                    req_spend_unit = st.number_input("Spend Unit (₹)", min_value=50, value=100, step=50)
                     
-                    if m_submit and m_card_name and m_program:
-                        try:
+                    if st.form_submit_button("Submit Request"):
+                        if req_card_name:
                             with get_db_connection() as conn:
                                 cursor = conn.cursor()
-                                cursor.execute("INSERT INTO cards (user_id, card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?, ?)", 
-                                             (st.session_state.user_id, m_card_name, m_program, m_init_bal, m_spend_unit, "Manual Entry"))
-                                new_card_id = cursor.lastrowid
-                                cursor.execute("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)",
-                                             (new_card_id, "catch_all", m_base_mult))
+                                cursor.execute("INSERT INTO card_requests (user_id, requested_card_name, initial_balance, spend_unit) VALUES (?, ?, ?, ?)",
+                                             (st.session_state.user_id, req_card_name, req_init_bal, req_spend_unit))
                                 conn.commit()
-                            st.success(f"✅ Manually added {m_card_name}!")
+                            st.success(f"✅ Submitted request for {req_card_name}. It will appear here once approved by Admin.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Error adding card: {e}")
+                        else:
+                            st.error("Please enter a card name.")
+        
+        # Display Pending Requests
+        with get_db_connection() as conn:
+            df_pending = pd.read_sql_query("SELECT requested_card_name, status FROM card_requests WHERE user_id = ? AND status = 'pending'", conn, params=(st.session_state.user_id,))
+        if not df_pending.empty:
+            st.markdown("**Your Pending Requests:**")
+            for _, row in df_pending.iterrows():
+                st.caption(f"⏳ {row['requested_card_name']} (Pending Admin Approval)")
                     
     with colM2:
         with st.expander("❌ Remove a Card"):
@@ -299,8 +286,9 @@ with tab1:
                 if remove_submitted:
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        # ON DELETE CASCADE handles the multipliers automatically
-                        cursor.execute("DELETE FROM cards WHERE card_name = ? AND user_id = ?", (card_to_remove, st.session_state.user_id))
+                        cursor.execute("SELECT meta_id FROM card_metadata WHERE card_name = ?", (card_to_remove,))
+                        m_id = cursor.fetchone()[0]
+                        cursor.execute("DELETE FROM user_cards WHERE meta_id = ? AND user_id = ?", (m_id, st.session_state.user_id))
                         conn.commit()
                     st.success(f"Permanently removed {card_to_remove}.")
                     st.rerun()
@@ -309,7 +297,12 @@ with tab1:
 # SHARED: Dynamic program list for all tabs
 # ==========================================
 with get_db_connection() as conn:
-    df_programs = pd.read_sql_query("SELECT DISTINCT program FROM cards WHERE user_id = ?", conn, params=(st.session_state.user_id,))
+    df_programs = pd.read_sql_query("""
+        SELECT DISTINCT cm.program 
+        FROM user_cards uc 
+        JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+        WHERE uc.user_id = ?
+    """, conn, params=(st.session_state.user_id,))
 db_programs = [p for p in df_programs['program'].tolist() if p != "Pending AI Discovery..."]
 all_programs = sorted(list(set(db_programs)))
 
@@ -470,6 +463,98 @@ if st.session_state.role == 'admin':
             users_df = pd.read_sql_query("SELECT user_id, username, email, role FROM users", conn)
         st.subheader("Registered Users")
         st.dataframe(users_df, use_container_width=True)
+        
+        st.subheader("Pending Card Requests")
+        with get_db_connection() as conn:
+            requests_df = pd.read_sql_query("""
+                SELECT cr.request_id, u.username, cr.requested_card_name, cr.initial_balance, cr.spend_unit
+                FROM card_requests cr
+                JOIN users u ON cr.user_id = u.user_id
+                WHERE cr.status = 'pending'
+            """, conn)
+            
+        if requests_df.empty:
+            st.info("No pending card requests.")
+        else:
+            st.dataframe(requests_df, use_container_width=True)
+            
+            with st.form("admin_process_request"):
+                selected_req_id = st.selectbox("Select Request ID to Process", requests_df['request_id'].tolist())
+                proc_mode = st.radio("Processing Method", ["AI Auto-Discovery", "Manual Entry", "Reject Request"])
+                
+                m_program = st.text_input("Manual: Program Name")
+                m_base_mult = st.number_input("Manual: Base Multiplier (x)", min_value=0.1, value=1.0, step=0.1)
+                
+                if st.form_submit_button("Process Request"):
+                    req = requests_df[requests_df['request_id'] == selected_req_id].iloc[0]
+                    req_id = int(req['request_id'])
+                    c_name = req['requested_card_name']
+                    with get_db_connection() as conn:
+                        u_id = int(conn.execute("SELECT user_id FROM card_requests WHERE request_id = ?", (req_id,)).fetchone()[0])
+                    bal = int(req['initial_balance'])
+                    spend = int(req['spend_unit'])
+                    
+                    if proc_mode == "Reject Request":
+                        with get_db_connection() as conn:
+                            conn.execute("UPDATE card_requests SET status = 'rejected' WHERE request_id = ?", (req_id,))
+                            conn.commit()
+                        st.success(f"Rejected request {req_id}.")
+                        st.rerun()
+                        
+                    elif proc_mode == "AI Auto-Discovery":
+                        with st.spinner(f"AI discovering details for {c_name}..."):
+                            ai_data = auto_discover_card_details(c_name)
+                            if "error" not in ai_data:
+                                real_program = ai_data.get("reward_program", f"{c_name} Rewards")
+                                real_link = ai_data.get("reward_link", "Not Found")
+                                mults = ai_data.get("multipliers", [{"category": "catch_all", "multiplier": 1.0}])
+                            else:
+                                real_program = f"{c_name} Rewards"
+                                real_link = "Manual Update Required"
+                                mults = [{"category": "catch_all", "multiplier": 1.0}]
+                                st.warning("AI failed to discover card. Saved with default 1x multiplier.")
+                            
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("INSERT OR IGNORE INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?)",
+                                             (c_name, real_program, real_link))
+                                cursor.execute("SELECT meta_id FROM card_metadata WHERE card_name = ?", (c_name,))
+                                meta_id = cursor.fetchone()[0]
+                                
+                                cursor.execute("DELETE FROM multipliers WHERE meta_id = ?", (meta_id,))
+                                for m in mults:
+                                    cursor.execute("INSERT INTO multipliers (meta_id, category, multiplier) VALUES (?, ?, ?)",
+                                                 (meta_id, m.get("category", "catch_all"), float(m.get("multiplier", 1.0))))
+                                                 
+                                cursor.execute("INSERT OR IGNORE INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (?, ?, ?, ?)",
+                                             (u_id, meta_id, bal, spend))
+                                             
+                                cursor.execute("UPDATE card_requests SET status = 'approved' WHERE request_id = ?", (req_id,))
+                                conn.commit()
+                            st.success(f"Successfully processed {c_name} via AI and added to user's portfolio!")
+                            st.rerun()
+                            
+                    elif proc_mode == "Manual Entry":
+                        if m_program:
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("INSERT OR IGNORE INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?)",
+                                             (c_name, m_program, "Manual Entry"))
+                                cursor.execute("SELECT meta_id FROM card_metadata WHERE card_name = ?", (c_name,))
+                                meta_id = cursor.fetchone()[0]
+                                
+                                cursor.execute("DELETE FROM multipliers WHERE meta_id = ?", (meta_id,))
+                                cursor.execute("INSERT INTO multipliers (meta_id, category, multiplier) VALUES (?, ?, ?)", (meta_id, "catch_all", m_base_mult))
+                                
+                                cursor.execute("INSERT OR IGNORE INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (?, ?, ?, ?)",
+                                             (u_id, meta_id, bal, spend))
+                                             
+                                cursor.execute("UPDATE card_requests SET status = 'approved' WHERE request_id = ?", (req_id,))
+                                conn.commit()
+                            st.success(f"Successfully processed {c_name} manually!")
+                            st.rerun()
+                        else:
+                            st.error("Program Name is required for Manual Entry.")
         
         st.subheader("Global Transfer Partners Database")
         st.info("Warning: Editing these values affects the redemption calculators for ALL users on the platform.")

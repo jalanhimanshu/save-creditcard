@@ -39,15 +39,35 @@ def init_db():
         ''')
         
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS cards (
-                card_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                card_name TEXT,
+            CREATE TABLE IF NOT EXISTS card_metadata (
+                meta_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                card_name TEXT UNIQUE,
                 program TEXT,
+                reward_link TEXT
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS user_cards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                meta_id INTEGER,
                 current_balance INTEGER,
                 spend_unit INTEGER,
-                reward_link TEXT,
-                UNIQUE(user_id, card_name),
+                UNIQUE(user_id, meta_id),
+                FOREIGN KEY(user_id) REFERENCES users(user_id),
+                FOREIGN KEY(meta_id) REFERENCES card_metadata(meta_id)
+            )
+        ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS card_requests (
+                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                requested_card_name TEXT,
+                initial_balance INTEGER,
+                spend_unit INTEGER,
+                status TEXT DEFAULT 'pending',
                 FOREIGN KEY(user_id) REFERENCES users(user_id)
             )
         ''')
@@ -55,10 +75,11 @@ def init_db():
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS multipliers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                card_id INTEGER,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                meta_id INTEGER,
                 category TEXT,
                 multiplier REAL,
-                FOREIGN KEY (card_id) REFERENCES cards (card_id) ON DELETE CASCADE
+                FOREIGN KEY (meta_id) REFERENCES card_metadata (meta_id) ON DELETE CASCADE
             )
         ''')
         
@@ -74,7 +95,7 @@ def init_db():
         
         conn.commit()
         
-        cursor.execute("SELECT COUNT(*) FROM cards")
+        cursor.execute("SELECT COUNT(*) FROM card_metadata")
         if cursor.fetchone()[0] == 0:
             seed_data(conn)
 
@@ -93,32 +114,58 @@ def seed_data(conn):
     cursor.execute("SELECT user_id FROM users WHERE username = 'jalanhimanshu'")
     admin_id = cursor.fetchone()[0]
     
-    # Insert Cards: user_id, name, program, balance, spend_unit, reward_link
-    cards_data = [
-        (admin_id, 'SBI Elite', 'SBI Rewardz', 10000, 100, 'https://www.sbicard.com/en/personal/rewards.page'),
-        (admin_id, 'BOB Eterna', 'BOB Rewardz', 5000, 100, 'https://www.bobcard.co.in/credit-card-types/eterna'),
-        (admin_id, 'HDFC Diners Black Privilege', 'HDFC Reward Points', 25000, 150, 'https://offers.smartbuy.hdfcbank.com/diners'),
-        (admin_id, 'HDFC Tata Neu', 'NeuCoins', 3000, 100, 'https://www.tataneu.com/neucoins'),
-        (admin_id, 'HDFC Swiggy', 'Swiggy Cashback', 1500, 100, 'https://www.hdfcbank.com/personal/pay/cards/credit-cards/swiggy-hdfc-bank-credit-card'),
-        (admin_id, 'Amex Platinum Travel', 'Amex MR (India)', 40000, 50, 'https://www.americanexpress.com/en-in/rewards/membership-rewards/'),
-        (admin_id, 'HSBC Platinum', 'HSBC Rewards', 8000, 150, 'https://www.hsbc.co.in/credit-cards/rewards/'),
-        (admin_id, 'IDFC First Bank', 'IDFC Rewards', 12000, 100, 'https://www.idfcfirstbank.com/credit-card/rewards'),
-        (admin_id, 'ICICI Coral', 'ICICI Rewards', 4000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/coral-card/index.page'),
-        (admin_id, 'ICICI Sapphiro', 'ICICI Rewards', 18000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/sapphiro/index.page'),
-        (admin_id, 'ICICI Rupay', 'ICICI Rewards', 2000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/rupay-credit-card.page'),
-        (admin_id, 'Adani One ICICI', 'Adani Rewardz', 5000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/adani-one.page'),
-        (admin_id, 'ICICI MakeMyTrip', 'MyCash', 3500, 200, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/makemytrip.page'),
-        (admin_id, 'IndusInd Indulge', 'IndusInd Rewards', 60000, 100, 'https://www.indusind.com/in/en/personal/cards/credit-card/indulge-credit-card.html'),
-        (admin_id, 'Yes Bank Reserv', 'Yes Rewards', 15000, 200, 'https://www.yesbank.in/personal-banking/cards/credit-card/yes-first-exclusive'),
-        (admin_id, 'Kotak Bank PVR', 'PVR Tickets', 2, 100, 'https://www.kotak.com/en/personal-banking/cards/credit-cards/pvr-kotak-credit-card.html'),
-        (admin_id, 'RBL IndianOil XtraPremium', 'Fuel Points', 1200, 100, 'https://www.rblbank.com/product/credit-cards/indianoil-rbl-bank-xtra-credit-card'),
-        (admin_id, 'Federal Scapia', 'Scapia Coins', 8000, 100, 'https://www.federalbank.co.in/scapia-credit-card'),
-        (admin_id, 'Equitas Selfe', 'Equitas Rewards', 2500, 100, 'https://www.equitasbank.com/selfe-credit-card')
+    # Insert Global Catalog: name, program, reward_link
+    cards_meta = [
+        ('SBI Elite', 'SBI Rewardz', 'https://www.sbicard.com/en/personal/rewards.page'),
+        ('BOB Eterna', 'BOB Rewardz', 'https://www.bobcard.co.in/credit-card-types/eterna'),
+        ('HDFC Diners Black Privilege', 'HDFC Reward Points', 'https://offers.smartbuy.hdfcbank.com/diners'),
+        ('HDFC Tata Neu', 'NeuCoins', 'https://www.tataneu.com/neucoins'),
+        ('HDFC Swiggy', 'Swiggy Cashback', 'https://www.hdfcbank.com/personal/pay/cards/credit-cards/swiggy-hdfc-bank-credit-card'),
+        ('Amex Platinum Travel', 'Amex MR (India)', 'https://www.americanexpress.com/en-in/rewards/membership-rewards/'),
+        ('HSBC Platinum', 'HSBC Rewards', 'https://www.hsbc.co.in/credit-cards/rewards/'),
+        ('IDFC First Bank', 'IDFC Rewards', 'https://www.idfcfirstbank.com/credit-card/rewards'),
+        ('ICICI Coral', 'ICICI Rewards', 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/coral-card/index.page'),
+        ('ICICI Sapphiro', 'ICICI Rewards', 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/sapphiro/index.page'),
+        ('ICICI Rupay', 'ICICI Rewards', 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/rupay-credit-card.page'),
+        ('Adani One ICICI', 'Adani Rewardz', 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/adani-one.page'),
+        ('ICICI MakeMyTrip', 'MyCash', 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/makemytrip.page'),
+        ('IndusInd Indulge', 'IndusInd Rewards', 'https://www.indusind.com/in/en/personal/cards/credit-card/indulge-credit-card.html'),
+        ('Yes Bank Reserv', 'Yes Rewards', 'https://www.yesbank.in/personal-banking/cards/credit-card/yes-first-exclusive'),
+        ('Kotak Bank PVR', 'PVR Tickets', 'https://www.kotak.com/en/personal-banking/cards/credit-cards/pvr-kotak-credit-card.html'),
+        ('RBL IndianOil XtraPremium', 'Fuel Points', 'https://www.rblbank.com/product/credit-cards/indianoil-rbl-bank-xtra-credit-card'),
+        ('Federal Scapia', 'Scapia Coins', 'https://www.federalbank.co.in/scapia-credit-card'),
+        ('Equitas Selfe', 'Equitas Rewards', 'https://www.equitasbank.com/selfe-credit-card')
     ]
-    cursor.executemany("INSERT INTO cards (user_id, card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?, ?)", cards_data)
+    cursor.executemany("INSERT INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?)", cards_meta)
     
-    cursor.execute("SELECT card_id, card_name FROM cards")
-    card_map = {name: id for id, name in cursor.fetchall()}
+    cursor.execute("SELECT card_name, meta_id FROM card_metadata")
+    meta_map = {name: id for name, id in cursor.fetchall()}
+    
+    # Assign cards to Admin's Portfolio: user_id, meta_id, balance, spend_unit
+    user_cards_data = [
+        (admin_id, meta_map['SBI Elite'], 10000, 100),
+        (admin_id, meta_map['BOB Eterna'], 5000, 100),
+        (admin_id, meta_map['HDFC Diners Black Privilege'], 25000, 150),
+        (admin_id, meta_map['HDFC Tata Neu'], 3000, 100),
+        (admin_id, meta_map['HDFC Swiggy'], 1500, 100),
+        (admin_id, meta_map['Amex Platinum Travel'], 40000, 50),
+        (admin_id, meta_map['HSBC Platinum'], 8000, 150),
+        (admin_id, meta_map['IDFC First Bank'], 12000, 100),
+        (admin_id, meta_map['ICICI Coral'], 4000, 100),
+        (admin_id, meta_map['ICICI Sapphiro'], 18000, 100),
+        (admin_id, meta_map['ICICI Rupay'], 2000, 100),
+        (admin_id, meta_map['Adani One ICICI'], 5000, 100),
+        (admin_id, meta_map['ICICI MakeMyTrip'], 3500, 200),
+        (admin_id, meta_map['IndusInd Indulge'], 60000, 100),
+        (admin_id, meta_map['Yes Bank Reserv'], 15000, 200),
+        (admin_id, meta_map['Kotak Bank PVR'], 2, 100),
+        (admin_id, meta_map['RBL IndianOil XtraPremium'], 1200, 100),
+        (admin_id, meta_map['Federal Scapia'], 8000, 100),
+        (admin_id, meta_map['Equitas Selfe'], 2500, 100)
+    ]
+    cursor.executemany("INSERT INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (?, ?, ?, ?)", user_cards_data)
+    
+    card_map = meta_map
     
     # Insert Multipliers
     multipliers_data = [
@@ -182,7 +229,7 @@ def seed_data(conn):
         (card_map['Equitas Selfe'], 'dining', 2),
         (card_map['Equitas Selfe'], 'catch_all', 1)
     ]
-    cursor.executemany("INSERT INTO multipliers (card_id, category, multiplier) VALUES (?, ?, ?)", multipliers_data)
+    cursor.executemany("INSERT INTO multipliers (meta_id, category, multiplier) VALUES (?, ?, ?)", multipliers_data)
     
     # Insert Transfer Partners
     transfer_partners_data = [

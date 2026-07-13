@@ -114,7 +114,7 @@ def run_daily_market_sync():
         # Dynamically fetch user cards
         with sqlite3.connect('savepoints.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT card_name FROM cards")
+            cursor.execute("SELECT card_name FROM card_metadata")
             cards = cursor.fetchall()
             cards_str = ", ".join([name for name, in cards])
 
@@ -206,7 +206,7 @@ def run_twitter_sync():
     try:
         with sqlite3.connect('savepoints.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT card_name FROM cards")
+            cursor.execute("SELECT card_name FROM card_metadata")
             cards = cursor.fetchall()
             cards_str = ", ".join([name for name, in cards])
 
@@ -235,7 +235,7 @@ def run_redemption_offer_sync():
         # Fetch portfolio data and transfer partners from DB
         with sqlite3.connect('savepoints.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT card_name, program, current_balance FROM cards")
+            cursor.execute("SELECT card_name, program, reward_link FROM card_metadata")
             cards = cursor.fetchall()
             portfolio_str = "\n".join([f"- {c[0]} ({c[1]}): {c[2]} points" for c in cards])
             
@@ -271,18 +271,34 @@ def ask_savepoints_ai(user_question: str, user_id: int) -> str:
     try:
         with sqlite3.connect('savepoints.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT card_name, program, current_balance FROM cards WHERE user_id = ?", (user_id,))
+            cursor.execute("""
+                SELECT cm.card_name, cm.program, uc.current_balance 
+                FROM user_cards uc 
+                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+                WHERE uc.user_id = ?
+            """, (user_id,))
             cards = cursor.fetchall()
             cards_context = "\n".join([f"- {c[0]} ({c[1]}): {c[2]} points" for c in cards])
             
-            cursor.execute("SELECT c.card_name, m.category, m.multiplier FROM cards c JOIN multipliers m ON c.card_id = m.card_id WHERE c.user_id = ?", (user_id,))
+            cursor.execute("""
+                SELECT cm.card_name, m.category, m.multiplier 
+                FROM user_cards uc 
+                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+                JOIN multipliers m ON cm.meta_id = m.meta_id 
+                WHERE uc.user_id = ?
+            """, (user_id,))
             multipliers = cursor.fetchall()
             mult_context = "\n".join([f"- {m[0]} earns {m[2]}x on {m[1]}" for m in multipliers])
             
             cursor.execute("""
                 SELECT source_program, target_partner, transfer_ratio, est_value_cpp 
                 FROM transfer_partners 
-                WHERE source_program IN (SELECT DISTINCT program FROM cards WHERE user_id = ?)
+                WHERE source_program IN (
+                    SELECT DISTINCT cm.program 
+                    FROM user_cards uc 
+                    JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+                    WHERE uc.user_id = ?
+                )
             """, (user_id,))
             partners = cursor.fetchall()
             partners_context = "\n".join([f"- {p[0]} -> {p[1]}: Ratio is {p[2]}, estimated value is ₹{p[3]} per point" for p in partners])

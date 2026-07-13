@@ -34,10 +34,11 @@ def suggest_best_card(category: str, spend_amount: float, user_id: int) -> list:
     """
     with get_db_connection() as conn:
         query = """
-            SELECT c.card_name, c.program, c.spend_unit, m.category, m.multiplier
-            FROM cards c
-            JOIN multipliers m ON c.card_id = m.card_id
-            WHERE c.user_id = ?
+            SELECT cm.card_name, cm.program, uc.spend_unit, m.category, m.multiplier
+            FROM user_cards uc
+            JOIN card_metadata cm ON uc.meta_id = cm.meta_id
+            JOIN multipliers m ON cm.meta_id = m.meta_id
+            WHERE uc.user_id = ?
         """
         df = pd.read_sql_query(query, conn, params=(user_id,))
     
