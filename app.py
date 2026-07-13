@@ -37,17 +37,24 @@ def hash_password(password):
     salt = "savepoints_salt_"
     return hashlib.sha256((salt + password).encode()).hexdigest()
 
-# Load cookies if present
+# Load cookies if present (these arrive on the second render cycle)
 cookie_user = controller.get('auth_user_id')
 cookie_role = controller.get('auth_role')
 cookie_username = controller.get('auth_username')
 
 if 'user_id' not in st.session_state:
-    st.session_state.user_id = cookie_user
+    st.session_state.user_id = None
 if 'role' not in st.session_state:
-    st.session_state.role = cookie_role
+    st.session_state.role = None
 if 'username' not in st.session_state:
+    st.session_state.username = None
+
+# If session is logged out but we just got cookies from the frontend, log them in!
+if st.session_state.user_id is None and cookie_user is not None:
+    st.session_state.user_id = cookie_user
+    st.session_state.role = cookie_role
     st.session_state.username = cookie_username
+    st.rerun()
 
 if not st.session_state.user_id:
     st.title("SavePoints Rewards Dashboard")
