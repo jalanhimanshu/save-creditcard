@@ -1,0 +1,7 @@
+Total Trades Triggered: 7
+Total Wins: 7 (T1: 3, T2: 4)
+Total Losses: 0
+Time Exits: 0
+OVERALL WIN RATE: 100.00%
+Tier 1 Win Rate: 100.00% (2 trades)
+Tier 2 Win Rate: 100.00% (5 trades)

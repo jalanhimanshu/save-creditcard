@@ -20,13 +20,26 @@ def init_db():
         
         # Create Tables
         cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password_hash TEXT,
+                email TEXT,
+                role TEXT DEFAULT 'user'
+            )
+        ''')
+        
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS cards (
                 card_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                card_name TEXT UNIQUE,
+                user_id INTEGER,
+                card_name TEXT,
                 program TEXT,
                 current_balance INTEGER,
                 spend_unit INTEGER,
-                reward_link TEXT
+                reward_link TEXT,
+                UNIQUE(user_id, card_name),
+                FOREIGN KEY(user_id) REFERENCES users(user_id)
             )
         ''')
         
@@ -57,31 +70,43 @@ def init_db():
             seed_data(conn)
 
 def seed_data(conn):
+    import hashlib
     cursor = conn.cursor()
     
-    # Insert Cards: name, program, balance, spend_unit, reward_link
+    salt = "savepoints_salt_"
+    admin_password = hashlib.sha256((salt + 'password@him').encode()).hexdigest()
+    
+    cursor.execute('''
+        INSERT OR IGNORE INTO users (username, password_hash, email, role)
+        VALUES (?, ?, ?, ?)
+    ''', ('jalanhimanshu', admin_password, 'admin@savepoints.local', 'admin'))
+    
+    cursor.execute("SELECT user_id FROM users WHERE username = 'jalanhimanshu'")
+    admin_id = cursor.fetchone()[0]
+    
+    # Insert Cards: user_id, name, program, balance, spend_unit, reward_link
     cards_data = [
-        ('SBI Elite', 'SBI Rewardz', 10000, 100, 'https://www.sbicard.com/en/personal/rewards.page'),
-        ('BOB Eterna', 'BOB Rewardz', 5000, 100, 'https://www.bobcard.co.in/credit-card-types/eterna'),
-        ('HDFC Diners Black Privilege', 'HDFC Reward Points', 25000, 150, 'https://offers.smartbuy.hdfcbank.com/diners'),
-        ('HDFC Tata Neu', 'NeuCoins', 3000, 100, 'https://www.tataneu.com/neucoins'),
-        ('HDFC Swiggy', 'Swiggy Cashback', 1500, 100, 'https://www.hdfcbank.com/personal/pay/cards/credit-cards/swiggy-hdfc-bank-credit-card'),
-        ('Amex Platinum Travel', 'Amex MR (India)', 40000, 50, 'https://www.americanexpress.com/en-in/rewards/membership-rewards/'),
-        ('HSBC Platinum', 'HSBC Rewards', 8000, 150, 'https://www.hsbc.co.in/credit-cards/rewards/'),
-        ('IDFC First Bank', 'IDFC Rewards', 12000, 100, 'https://firstrewards.in/'),
-        ('ICICI Coral', 'ICICI Rewards', 6000, 100, 'https://www.ishoprewards.com/'),
-        ('ICICI Sapphiro', 'ICICI Rewards', 15000, 100, 'https://www.ishoprewards.com/'),
-        ('ICICI Rupay', 'ICICI Rewards', 2000, 100, 'https://www.ishoprewards.com/'),
-        ('Adani One ICICI', 'Adani Rewardz', 4000, 100, 'https://www.ishoprewards.com/'),
-        ('ICICI MakeMyTrip', 'MyCash', 5000, 200, 'https://www.ishoprewards.com/'),
-        ('IndusInd Indulge', 'IndusInd Rewards', 10000, 100, 'https://www.indusmoments.com/'),
-        ('Yes Bank Reserv', 'Yes Rewards', 18000, 200, 'https://www.yesrewardz.com/'),
-        ('Kotak Bank PVR', 'PVR Tickets', 0, 100, 'https://www.kotak.com/en/personal-banking/cards/credit-cards/pvr-inox-kotak-credit-card.html'),
-        ('RBL IndianOil XtraPremium', 'Fuel Points', 5000, 100, 'https://www.rblbank.com/product/credit-cards/indian-oil-rbl-bank-credit-card'),
-        ('Federal Scapia', 'Scapia Coins', 8000, 100, 'https://www.scapia.cards/'),
-        ('Equitas Selfe', 'Equitas Rewards', 2000, 100, 'https://www.equitasbank.com/')
+        (admin_id, 'SBI Elite', 'SBI Rewardz', 10000, 100, 'https://www.sbicard.com/en/personal/rewards.page'),
+        (admin_id, 'BOB Eterna', 'BOB Rewardz', 5000, 100, 'https://www.bobcard.co.in/credit-card-types/eterna'),
+        (admin_id, 'HDFC Diners Black Privilege', 'HDFC Reward Points', 25000, 150, 'https://offers.smartbuy.hdfcbank.com/diners'),
+        (admin_id, 'HDFC Tata Neu', 'NeuCoins', 3000, 100, 'https://www.tataneu.com/neucoins'),
+        (admin_id, 'HDFC Swiggy', 'Swiggy Cashback', 1500, 100, 'https://www.hdfcbank.com/personal/pay/cards/credit-cards/swiggy-hdfc-bank-credit-card'),
+        (admin_id, 'Amex Platinum Travel', 'Amex MR (India)', 40000, 50, 'https://www.americanexpress.com/en-in/rewards/membership-rewards/'),
+        (admin_id, 'HSBC Platinum', 'HSBC Rewards', 8000, 150, 'https://www.hsbc.co.in/credit-cards/rewards/'),
+        (admin_id, 'IDFC First Bank', 'IDFC Rewards', 12000, 100, 'https://www.idfcfirstbank.com/credit-card/rewards'),
+        (admin_id, 'ICICI Coral', 'ICICI Rewards', 4000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/coral-card/index.page'),
+        (admin_id, 'ICICI Sapphiro', 'ICICI Rewards', 18000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/sapphiro/index.page'),
+        (admin_id, 'ICICI Rupay', 'ICICI Rewards', 2000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/rupay-credit-card.page'),
+        (admin_id, 'Adani One ICICI', 'Adani Rewardz', 5000, 100, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/adani-one.page'),
+        (admin_id, 'ICICI MakeMyTrip', 'MyCash', 3500, 200, 'https://www.icicibank.com/Personal-Banking/cards/Consumer-Cards/Credit-Card/makemytrip.page'),
+        (admin_id, 'IndusInd Indulge', 'IndusInd Rewards', 60000, 100, 'https://www.indusind.com/in/en/personal/cards/credit-card/indulge-credit-card.html'),
+        (admin_id, 'Yes Bank Reserv', 'Yes Rewards', 15000, 200, 'https://www.yesbank.in/personal-banking/cards/credit-card/yes-first-exclusive'),
+        (admin_id, 'Kotak Bank PVR', 'PVR Tickets', 2, 100, 'https://www.kotak.com/en/personal-banking/cards/credit-cards/pvr-kotak-credit-card.html'),
+        (admin_id, 'RBL IndianOil XtraPremium', 'Fuel Points', 1200, 100, 'https://www.rblbank.com/product/credit-cards/indianoil-rbl-bank-xtra-credit-card'),
+        (admin_id, 'Federal Scapia', 'Scapia Coins', 8000, 100, 'https://www.federalbank.co.in/scapia-credit-card'),
+        (admin_id, 'Equitas Selfe', 'Equitas Rewards', 2500, 100, 'https://www.equitasbank.com/selfe-credit-card')
     ]
-    cursor.executemany("INSERT INTO cards (card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?)", cards_data)
+    cursor.executemany("INSERT INTO cards (user_id, card_name, program, current_balance, spend_unit, reward_link) VALUES (?, ?, ?, ?, ?, ?)", cards_data)
     
     cursor.execute("SELECT card_id, card_name FROM cards")
     card_map = {name: id for id, name in cursor.fetchall()}

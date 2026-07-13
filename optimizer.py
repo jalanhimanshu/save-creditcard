@@ -27,7 +27,7 @@ BASELINE_CPP = {
 def get_baseline_cpp(program: str) -> float:
     return BASELINE_CPP.get(program, 0.20)
 
-def suggest_best_card(category: str, spend_amount: float) -> list:
+def suggest_best_card(category: str, spend_amount: float, user_id: int) -> list:
     """
     Evaluates all active cards using Indian spend_unit mathematics.
     Returns a ranked list sorted by financial yield in ₹.
@@ -37,8 +37,9 @@ def suggest_best_card(category: str, spend_amount: float) -> list:
             SELECT c.card_name, c.program, c.spend_unit, m.category, m.multiplier
             FROM cards c
             JOIN multipliers m ON c.card_id = m.card_id
+            WHERE c.user_id = ?
         """
-        df = pd.read_sql_query(query, conn)
+        df = pd.read_sql_query(query, conn, params=(user_id,))
     
     results = []
     
@@ -98,7 +99,7 @@ def evaluate_redemption(program: str, cash_cost: float, points_required: int) ->
         'rating': rating
     }
 
-def evaluate_flight_deal(cash_cost: float, points_cost: int, program: str) -> dict:
+def evaluate_flight_deal(cash_cost: float, points_cost: int, program: str, user_id: int) -> dict:
     """
     Evaluates the 'Effective' cost of a flight booking by factoring in opportunity costs.
     """
@@ -107,7 +108,7 @@ def evaluate_flight_deal(cash_cost: float, points_cost: int, program: str) -> di
     effective_points_value_rs = points_cost * baseline_cpp
     
     # 2. Evaluate Cash Route
-    best_cards_for_travel = suggest_best_card('travel', cash_cost)
+    best_cards_for_travel = suggest_best_card('travel', cash_cost, user_id)
     
     if best_cards_for_travel:
         best_card = best_cards_for_travel[0]

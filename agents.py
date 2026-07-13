@@ -257,7 +257,7 @@ def run_redemption_offer_sync():
         print(f"Redemption Sync failed: {e}")
         return False
 
-def ask_savepoints_ai(user_question: str) -> str:
+def ask_savepoints_ai(user_question: str, user_id: int) -> str:
     """
     Acts as the 'Savvy' killer - a chat backend that reads the DB and answers questions.
     """
@@ -271,19 +271,19 @@ def ask_savepoints_ai(user_question: str) -> str:
     try:
         with sqlite3.connect('savepoints.db') as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT card_name, program, current_balance FROM cards")
+            cursor.execute("SELECT card_name, program, current_balance FROM cards WHERE user_id = ?", (user_id,))
             cards = cursor.fetchall()
             cards_context = "\n".join([f"- {c[0]} ({c[1]}): {c[2]} points" for c in cards])
             
-            cursor.execute("SELECT c.card_name, m.category, m.multiplier FROM cards c JOIN multipliers m ON c.card_id = m.card_id")
+            cursor.execute("SELECT c.card_name, m.category, m.multiplier FROM cards c JOIN multipliers m ON c.card_id = m.card_id WHERE c.user_id = ?", (user_id,))
             multipliers = cursor.fetchall()
             mult_context = "\n".join([f"- {m[0]} earns {m[2]}x on {m[1]}" for m in multipliers])
             
             cursor.execute("""
                 SELECT source_program, target_partner, transfer_ratio, est_value_cpp 
                 FROM transfer_partners 
-                WHERE source_program IN (SELECT DISTINCT program FROM cards)
-            """)
+                WHERE source_program IN (SELECT DISTINCT program FROM cards WHERE user_id = ?)
+            """, (user_id,))
             partners = cursor.fetchall()
             partners_context = "\n".join([f"- {p[0]} -> {p[1]}: Ratio is {p[2]}, estimated value is ₹{p[3]} per point" for p in partners])
             
