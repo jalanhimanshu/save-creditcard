@@ -93,6 +93,17 @@ def init_db():
             )
         ''')
         
+        # AI Fallback Tracking Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS unhandled_queries (
+                query_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                question TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        ''')
+
         conn.commit()
         
         cursor.execute("SELECT COUNT(*) FROM card_metadata")

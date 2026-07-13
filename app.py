@@ -469,6 +469,30 @@ if st.session_state.role == 'admin':
         st.subheader("Registered Users")
         st.dataframe(users_df, use_container_width=True)
         
+        st.subheader("🤖 AI Learning Tracker (Unhandled Queries)")
+        st.info("These questions bypassed the local Intent Router and were sent to Gemini. Review them to identify new keywords to add to the local rules engine!")
+        try:
+            with get_db_connection() as conn:
+                unhandled_df = pd.read_sql_query("""
+                    SELECT uq.query_id, u.username, uq.question, uq.timestamp 
+                    FROM unhandled_queries uq
+                    JOIN users u ON uq.user_id = u.user_id
+                    ORDER BY uq.timestamp DESC
+                """, conn)
+            if unhandled_df.empty:
+                st.success("No unhandled queries! The Intent Router is catching everything.")
+            else:
+                st.dataframe(unhandled_df, use_container_width=True)
+                
+                # Option to clear the tracker
+                if st.button("Clear Learning Tracker"):
+                    with get_db_connection() as conn:
+                        conn.execute("DELETE FROM unhandled_queries")
+                        conn.commit()
+                    st.rerun()
+        except Exception as e:
+            st.error(f"Error loading unhandled queries: {e}")
+        
         st.subheader("Pending Card Requests")
         with get_db_connection() as conn:
             requests_df = pd.read_sql_query("""

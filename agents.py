@@ -259,11 +259,111 @@ def run_redemption_offer_sync():
 
 def ask_savepoints_ai(user_question: str, user_id: int) -> str:
     """
-    Acts as the 'Savvy' killer - a chat backend that reads the DB and answers questions.
+    Acts as the 'Savvy' killer - a chat backend that reads the DB and answers questions locally,
+    falling back to Gemini only when necessary.
     """
     import requests
     import json
+    import sqlite3
+    import os
     
+    # --- INTENT ROUTER (Local Pre-Processing) ---
+    q_lower = user_question.lower()
+    
+    try:
+        with sqlite3.connect('savepoints.db') as conn:
+            cursor = conn.cursor()
+            
+            # Fetch user's cards
+            cursor.execute("""
+                SELECT cm.card_name, cm.program, uc.current_balance 
+                FROM user_cards uc 
+                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
+                WHERE uc.user_id = ?
+            """, (user_id,))
+            user_cards = cursor.fetchall()
+            
+            # Identify if a specific card was mentioned
+            mentioned_card = None
+            for card in user_cards:
+                c_name = card[0]
+                if c_name.lower() in q_lower:
+                    mentioned_card = c_name
+                    break
+            
+            # Intent 1: Balance Check
+            if any(k in q_lower for k in ["balance", "how many points", "my points", "total points"]):
+                if not user_cards:
+                    return "You don't have any cards in your portfolio yet! Add some from the Dashboard."
+                if mentioned_card:
+                    for c in user_cards:
+                        if c[0] == mentioned_card:
+                            return f"💰 **{c[0]} Balance:** {c[2]:,} points ({c[1]})"
+                
+                resp = "Here are your current balances:\n"
+                for c in user_cards:
+                    resp += f"- **{c[0]}**: {c[2]:,} points\n"
+                return resp
+                
+            # Intent 2: Transfer Partners
+            if any(k in q_lower for k in ["transfer", "partners", "convert", "redeem", "where can i use"]):
+                if not user_cards:
+                    return "You need to add some cards to your portfolio before checking transfer partners."
+                
+                if mentioned_card:
+                    # Get program for mentioned card
+                    program = [c[1] for c in user_cards if c[0] == mentioned_card][0]
+                    cursor.execute("SELECT target_partner, transfer_ratio, est_value_cpp FROM transfer_partners WHERE source_program = ?", (program,))
+                    partners = cursor.fetchall()
+                    if not partners:
+                        return f"I couldn't find any transfer partners for the **{program}** program attached to your {mentioned_card}."
+                    
+                    resp = f"✈️ **Transfer Partners for {mentioned_card} ({program})**\n\n| Partner | Ratio | Est. Value (CPP) |\n|---|---|---|\n"
+                    for p in partners:
+                        resp += f"| {p[0]} | {p[1]} | ₹{p[2]:.2f} |\n"
+                    return resp
+                
+                # If they ask generally but we need to know which card
+                if "which card" not in q_lower and "what card" not in q_lower:
+                     return "Which card are you asking about? Please include the card name (e.g., 'What are my transfer partners for Axis Atlas?')"
+            
+            # Intent 3: Multipliers / Earning Rates
+            if any(k in q_lower for k in ["multiplier", "earn", "reward rate", "how many points for", "give me for"]):
+                if not user_cards:
+                    return "Please add cards to your portfolio to view earning rates."
+                
+                if mentioned_card:
+                    cursor.execute("""
+                        SELECT m.category, m.multiplier 
+                        FROM multipliers m 
+                        JOIN card_metadata cm ON m.meta_id = cm.meta_id
+                        WHERE cm.card_name = ?
+                    """, (mentioned_card,))
+                    mults = cursor.fetchall()
+                    if not mults:
+                        return f"I don't have earning rate data for your {mentioned_card}."
+                    
+                    resp = f"📊 **Earning Rates for {mentioned_card}**\n"
+                    for m in mults:
+                        resp += f"- **{m[0].replace('_', ' ').title()}**: {m[1]}x\n"
+                    return resp
+                
+                # General query, ask for a specific card
+                return "Which card's earning rates do you want to see? Please mention the card name."
+
+    except Exception as e:
+        print(f"Intent Router Error: {e}")
+        pass
+        
+    # --- FALLBACK TO GEMINI (API CALL) ---
+    # Log the unhandled query for the self-learning system
+    try:
+        with sqlite3.connect('savepoints.db') as conn:
+            conn.execute("INSERT INTO unhandled_queries (user_id, question) VALUES (?, ?)", (user_id, user_question))
+            conn.commit()
+    except Exception as e:
+        print(f"Failed to log unhandled query: {e}")
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return "Error: GEMINI_API_KEY is not set."
