@@ -3,6 +3,7 @@ import pandas as pd
 from database import get_db_connection
 import optimizer
 from agents import ask_savepoints_ai, auto_discover_card_details
+import re
 
 st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
 
@@ -61,68 +62,136 @@ if token and st.session_state.user_id is None:
             st.rerun()
 
 if not st.session_state.user_id:
-    st.title("SavePoints Rewards Dashboard")
-    st.markdown("### Please Login or Sign Up")
-    
-    login_tab, signup_tab = st.tabs(["Login", "Sign Up"])
-    
-    with login_tab:
-        l_user = st.text_input("Username", key="l_user")
-        l_pass = st.text_input("Password", type="password", key="l_pass")
-        if st.button("Login"):
-            with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
-                user = cursor.fetchone()
-                if user:
-                    st.session_state.user_id = user[0]
-                    st.session_state.role = user[1]
-                    st.session_state.username = l_user
-                    
-                    new_token = str(uuid.uuid4())
-                    cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
-                    conn.commit()
-                    st.query_params['session_id'] = new_token
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
-        
-        st.markdown("---")
-        st.button("Continue with Google", disabled=True, help="Requires Google Cloud Platform setup by Admin")
+    # --- SAAS SPLIT-SCREEN LOGIN OVERRIDE ---
+    st.markdown("""
+        <style>
+            [data-testid="stAppViewBlockContainer"] {
+                padding: 0 !important;
+                max-width: 100% !important;
+            }
+            [data-testid="stSidebar"] {
+                display: none;
+            }
+            [data-testid="stHeader"] {
+                display: none;
+            }
+            
+            /* Custom Form Styling */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 2rem;
+                justify-content: center;
+            }
+            div.stButton > button:first-child {
+                background-color: #4F46E5;
+                color: white;
+                border-radius: 8px;
+                padding: 0.75rem 1rem;
+                font-weight: 600;
+                border: none;
+            }
+            div.stButton > button:first-child:hover {
+                background-color: #4338CA;
+                color: white;
+            }
+            
+            /* Make the image touch the edges */
+            [data-testid="stImage"] img {
+                height: 100vh;
+                object-fit: cover;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-    with signup_tab:
-        s_user = st.text_input("Choose Username", key="s_user")
-        s_email = st.text_input("Email", key="s_email")
-        s_pass = st.text_input("Choose Password", type="password", key="s_pass")
-        if st.button("Sign Up"):
-            if not s_user or not s_pass:
-                st.error("Username and password are required")
-            else:
-                try:
+    col1, col2 = st.columns([1, 1], gap="collapse")
+    
+    with col1:
+        st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
+        col_form_l, col_form_c, col_form_r = st.columns([0.15, 0.7, 0.15])
+        with col_form_c:
+            st.markdown("<h1 style='text-align: center; color: #111827;'>Welcome Back</h1>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #6B7280; margin-bottom: 2rem;'>Sign in to continue to SavePoints.</p>", unsafe_allow_html=True)
+            
+            login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
+            
+            with login_tab:
+                l_user = st.text_input("Email Address", key="l_user")
+                l_pass = st.text_input("Password", type="password", key="l_pass")
+                st.markdown("<div style='text-align: right;'><a href='#' style='color: #4F46E5; font-size: 0.875rem; text-decoration: none;'>Forgot Password?</a></div>", unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if st.button("Sign In", use_container_width=True):
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, 'user')", (s_user, hash_password(s_pass), s_email))
-                        conn.commit()
-                        
-                        cursor.execute("SELECT user_id, role FROM users WHERE username = ?", (s_user,))
+                        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
                         user = cursor.fetchone()
-                        st.session_state.user_id = user[0]
-                        st.session_state.role = user[1]
-                        st.session_state.username = s_user
-                        
-                        new_token = str(uuid.uuid4())
-                        cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
-                        conn.commit()
-                        st.query_params['session_id'] = new_token
-                        st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Username already exists!")
+                        if user:
+                            st.session_state.user_id = user[0]
+                            st.session_state.role = user[1]
+                            st.session_state.username = l_user
+                            
+                            new_token = str(uuid.uuid4())
+                            cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                            conn.commit()
+                            st.query_params['session_id'] = new_token
+                            st.rerun()
+                        else:
+                            st.error("Invalid username or password")
+                
+                st.markdown("""
+                <div style="display: flex; align-items: center; margin: 2rem 0;">
+                    <div style="flex-grow: 1; height: 1px; background-color: #E5E7EB;"></div>
+                    <span style="padding: 0 1rem; color: #6B7280; font-size: 0.875rem;">or continue with</span>
+                    <div style="flex-grow: 1; height: 1px; background-color: #E5E7EB;"></div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.button("Continue with Google", disabled=True, use_container_width=True)
+
+            with signup_tab:
+                s_user = st.text_input("Email Address", key="s_user")
+                s_pass = st.text_input("Choose Password", type="password", key="s_pass")
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if st.button("Create Account", use_container_width=True):
+                    if not s_user or not s_pass:
+                        st.error("Email and password are required")
+                    elif not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", s_user):
+                        st.error("Please enter a valid email address")
+                    else:
+                        try:
+                            with get_db_connection() as conn:
+                                cursor = conn.cursor()
+                                cursor.execute("INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, 'user')", (s_user, hash_password(s_pass), s_user))
+                                conn.commit()
+                                
+                                cursor.execute("SELECT user_id, role FROM users WHERE username = ?", (s_user,))
+                                user = cursor.fetchone()
+                                st.session_state.user_id = user[0]
+                                st.session_state.role = user[1]
+                                st.session_state.username = s_user
+                                
+                                new_token = str(uuid.uuid4())
+                                cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                                conn.commit()
+                                st.query_params['session_id'] = new_token
+                                st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Email is already registered!")
+
+    with col2:
+        try:
+            import base64
+            # We copied it to hero_image.png but sometimes local loading fails in col full-bleed. 
+            # We'll use standard st.image
+            st.image("hero_image.png", use_container_width=True)
+        except Exception:
+            pass
+            
     st.stop()
 
-col_title, col_logout = st.columns([0.9, 0.1])
-with col_title:
-    st.title(f"SavePoints Rewards Dashboard - Welcome {st.session_state.username}!")
-with col_logout:
+st.title("SavePoints Rewards Dashboard")
+
+with st.sidebar:
+    st.markdown(f"**Logged in as:**<br>{st.session_state.username}", unsafe_allow_html=True)
     def logout():
         token = st.query_params.get('session_id')
         if token:
@@ -133,8 +202,8 @@ with col_logout:
         st.query_params.clear()
         st.session_state.clear()
         
-    st.button("Logout", on_click=logout)
-
+    st.button("Logout", on_click=logout, use_container_width=True)
+    st.markdown("---")
 tabs = ["Dashboard Overview", "Which Card to Use", "Redemption Calculator", "Smarter Flight Bookings", "Ask SavePoints AI"]
 if st.session_state.role == 'admin':
     tabs.append("Admin Control Panel")
