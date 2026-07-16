@@ -66,6 +66,12 @@ if not st.session_state.user_id:
     # --- SAAS PLAIN BACKGROUND OVERRIDE ---
     st.markdown("""
         <style>
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+            [data-testid="viewerBadge"] {display: none !important;}
+            div[class^="viewerBadge"] {display: none !important;}
+            
             [data-testid="stAppViewContainer"] {
                 background-color: #e2e8f0;
             }
