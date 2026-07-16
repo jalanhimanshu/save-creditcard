@@ -164,10 +164,10 @@ if not st.session_state.user_id:
                     else:
                         with get_db_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("SELECT security_question FROM users WHERE username = ?", (f_user,))
+                            cursor.execute("SELECT security_question, username FROM users WHERE username = ? OR email = ?", (f_user, f_user))
                             user = cursor.fetchone()
                             if user and user[0]:
-                                st.session_state.recovery_user = f_user
+                                st.session_state.recovery_user = user[1]
                                 st.session_state.recovery_question = user[0]
                             else:
                                 st.error("No security question found for this account. Please contact admin.")
@@ -207,12 +207,12 @@ if not st.session_state.user_id:
                 if st.button("Sign In", use_container_width=True):
                     with get_db_connection() as conn:
                         cursor = conn.cursor()
-                        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
+                        cursor.execute("SELECT user_id, role, username FROM users WHERE (username = ? OR email = ?) AND password_hash = ?", (l_user, l_user, hash_password(l_pass)))
                         user = cursor.fetchone()
                         if user:
                             st.session_state.user_id = user[0]
                             st.session_state.role = user[1]
-                            st.session_state.username = l_user
+                            st.session_state.username = user[2]
                             
                             new_token = str(uuid.uuid4())
                             cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
