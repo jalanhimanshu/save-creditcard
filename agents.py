@@ -27,6 +27,49 @@ def fetch_cardexpert_rss():
     except Exception as e:
         return f"Error fetching RSS: {e}"
 
+def fetch_local_flash_deals():
+    import urllib.request
+    import xml.etree.ElementTree as ET
+    
+    deals = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    
+    # 1. Fetch from CardExpert
+    try:
+        req_ce = urllib.request.Request('https://www.cardexpert.in/feed/', headers=headers)
+        res_ce = urllib.request.urlopen(req_ce, timeout=10)
+        root_ce = ET.fromstring(res_ce.read())
+        
+        ce_keywords = ['offer', 'discount', 'cashback', 'bonus', 'sale', 'reward', 'devaluation', 'changes']
+        for item in root_ce.findall('.//item')[:10]:
+            title = item.find('title').text if item.find('title') is not None else ''
+            link = item.find('link').text if item.find('link') is not None else '#'
+            if any(k in title.lower() for k in ce_keywords):
+                deals.append(f"- ⚡ **[CardExpert]** [{title}]({link})")
+    except Exception:
+        pass
+
+    # 2. Fetch from DesiDime
+    try:
+        req_dd = urllib.request.Request('https://www.desidime.com/deals/new.rss', headers=headers)
+        res_dd = urllib.request.urlopen(req_dd, timeout=10)
+        root_dd = ET.fromstring(res_dd.read())
+        
+        # Desidime has all sorts of deals, so we only want credit card related ones
+        dd_keywords = ['credit card', 'hdfc', 'sbi', 'icici', 'axis', 'amex', 'kotak', 'bob', 'indusind', 'au small', 'idfc']
+        for item in root_dd.findall('.//item')[:25]:
+            title = item.find('title').text if item.find('title') is not None else ''
+            link = item.find('link').text if item.find('link') is not None else '#'
+            if any(k in title.lower() for k in dd_keywords):
+                deals.append(f"- 💰 **[DesiDime]** [{title}]({link})")
+    except Exception:
+        pass
+
+    if deals:
+        return "\n".join(deals)
+    else:
+        return "No major flash deals or offers found recently."
+
 def create_market_crew():
     llm = get_llm()
     
@@ -50,7 +93,8 @@ def create_market_crew():
         Identify the 3 most significant recent reward devaluations, multiplier changes, or buffs affecting these specific cards or their respective banks (HDFC, SBI, ICICI, Amex, etc.).
         Output a structured summary of changes affecting multipliers, spend units, or baseline CPP.
         ''',
-        expected_output='A structured markdown report detailing recent credit card reward devaluations relevant to the user portfolio.',
+        expected_output='''A structured markdown report detailing recent credit card reward devaluations relevant to the user portfolio. 
+        DO NOT include a letterhead, "To/From" fields, dates, or memo subjects. Start immediately with an "Executive Summary" header, followed by a markdown table cross-referencing the changes against the user's cards.''',
         agent=market_intelligence_agent
     )
 
@@ -264,14 +308,14 @@ def ask_savepoints_ai(user_question: str, user_id: int) -> str:
     """
     import requests
     import json
-    import sqlite3
+    from database import get_db_connection
     import os
     
     # --- INTENT ROUTER (Local Pre-Processing) ---
     q_lower = user_question.lower()
     
     try:
-        with sqlite3.connect('savepoints.db') as conn:
+        with get_db_connection() as conn:
             cursor = conn.cursor()
             
             # Fetch user's cards
@@ -351,6 +395,58 @@ def ask_savepoints_ai(user_question: str, user_id: int) -> str:
                 # General query, ask for a specific card
                 return "Which card's earning rates do you want to see? Please mention the card name."
 
+            # Intent 4: Card Recommendation (Spend Category)
+            if any(k in q_lower for k in ["which card", "should i use", "best card for", "spending", "spend"]):
+                if not user_cards:
+                    return "You don't have any cards in your portfolio yet! Add some from the Dashboard to get recommendations."
+                
+                target_category = 'catch_all'
+                if any(k in q_lower for k in ["amazon", "flipkart", "myntra", "online", "shopping"]):
+                    target_category = 'online_shopping'
+                elif any(k in q_lower for k in ["flight", "hotel", "travel", "make my trip", "mmt"]):
+                    target_category = 'travel'
+                    if "mmt" in q_lower or "make my trip" in q_lower or "makemytrip" in q_lower:
+                        target_category = 'mmt_bookings'
+                elif any(k in q_lower for k in ["restaurant", "food", "dining", "zomato", "swiggy", "eat"]):
+                    target_category = 'dining'
+                    if "swiggy" in q_lower: target_category = 'swiggy'
+                    if "zomato" in q_lower: target_category = 'zomato'
+                elif any(k in q_lower for k in ["fuel", "petrol", "diesel", "gas"]):
+                    target_category = 'fuel'
+                elif any(k in q_lower for k in ["grocery", "supermarket", "departmental", "mart"]):
+                    target_category = 'departmental_stores'
+                elif any(k in q_lower for k in ["international", "foreign", "abroad", "usd"]):
+                    target_category = 'international'
+                elif any(k in q_lower for k in ["upi", "scan", "paytm", "phonepe", "gpay", "bharatpe"]):
+                    target_category = 'upi'
+                    
+                cursor.execute("""
+                    SELECT cm.card_name, m.multiplier
+                    FROM user_cards uc
+                    JOIN card_metadata cm ON uc.meta_id = cm.meta_id
+                    JOIN multipliers m ON cm.meta_id = m.meta_id
+                    WHERE uc.user_id = ? AND m.category = ?
+                    ORDER BY m.multiplier DESC
+                """, (user_id, target_category))
+                best_match = cursor.fetchone()
+                
+                if best_match:
+                    display_cat = target_category.replace('_', ' ').title()
+                    return f"💡 For this spend ({display_cat}), you should use your **{best_match[0]}**. It earns the highest rate at **{best_match[1]}x** points!"
+                else:
+                    cursor.execute("""
+                        SELECT cm.card_name, m.multiplier
+                        FROM user_cards uc
+                        JOIN card_metadata cm ON uc.meta_id = cm.meta_id
+                        JOIN multipliers m ON cm.meta_id = m.meta_id
+                        WHERE uc.user_id = ? AND m.category = 'catch_all'
+                        ORDER BY m.multiplier DESC
+                    """, (user_id,))
+                    best_catch = cursor.fetchone()
+                    if best_catch:
+                         return f"💡 I don't see a specific category bonus for that, so use your best everyday card: **{best_catch[0]}** (earns **{best_catch[1]}x** points)."
+                    return "I couldn't find a recommendation for this spend."
+
     except Exception as e:
         print(f"Intent Router Error: {e}")
         pass
@@ -358,84 +454,15 @@ def ask_savepoints_ai(user_question: str, user_id: int) -> str:
     # --- FALLBACK TO GEMINI (API CALL) ---
     # Log the unhandled query for the self-learning system
     try:
-        with sqlite3.connect('savepoints.db') as conn:
-            conn.execute("INSERT INTO unhandled_queries (user_id, question) VALUES (?, ?)", (user_id, user_question))
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO unhandled_queries (user_id, question) VALUES (?, ?)", (user_id, user_question))
             conn.commit()
     except Exception as e:
         print(f"Failed to log unhandled query: {e}")
 
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        return "Error: GEMINI_API_KEY is not set."
-        
-    try:
-        with sqlite3.connect('savepoints.db') as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT cm.card_name, cm.program, uc.current_balance 
-                FROM user_cards uc 
-                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
-                WHERE uc.user_id = ?
-            """, (user_id,))
-            cards = cursor.fetchall()
-            cards_context = "\n".join([f"- {c[0]} ({c[1]}): {c[2]} points" for c in cards])
-            
-            cursor.execute("""
-                SELECT cm.card_name, m.category, m.multiplier 
-                FROM user_cards uc 
-                JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
-                JOIN multipliers m ON cm.meta_id = m.meta_id 
-                WHERE uc.user_id = ?
-            """, (user_id,))
-            multipliers = cursor.fetchall()
-            mult_context = "\n".join([f"- {m[0]} earns {m[2]}x on {m[1]}" for m in multipliers])
-            
-            cursor.execute("""
-                SELECT source_program, target_partner, transfer_ratio, est_value_cpp 
-                FROM transfer_partners 
-                WHERE source_program IN (
-                    SELECT DISTINCT cm.program 
-                    FROM user_cards uc 
-                    JOIN card_metadata cm ON uc.meta_id = cm.meta_id 
-                    WHERE uc.user_id = ?
-                )
-            """, (user_id,))
-            partners = cursor.fetchall()
-            partners_context = "\n".join([f"- {p[0]} -> {p[1]}: Ratio is {p[2]}, estimated value is ₹{p[3]} per point" for p in partners])
-            
-        system_context = f"""
-        You are the 'SavePoints AI Advisor', an expert financial assistant built to outperform 'SaveSage'.
-        You MUST base your answers on the user's specific portfolio below.
-        
-        The user's credit card portfolio:
-        {cards_context}
-        
-        Their card multipliers:
-        {mult_context}
-        
-        Their best redemption options and transfer partners:
-        {partners_context}
-        
-        User Question: {user_question}
-        
-        Answer the user's question concisely, logically, and accurately to maximize their financial yield.
-        """
-        
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key={api_key}"
-        headers = {"Content-Type": "application/json"}
-        data = {
-            "contents": [{"parts": [{"text": system_context}]}]
-        }
-        
-        response = requests.post(url, headers=headers, json=data)
-        response_json = response.json()
-        
-        if "error" in response_json:
-            return f"API Error: {response_json['error'].get('message', 'Unknown error')}"
-            
-        return response_json["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        return f"AI System Error: The model endpoint could not be reached or failed. Detail: {e}"
+    # Gemini API is temporarily disabled to save quota.
+    return "I'm currently in **Offline Mode** to save API quota! I can still help you locally with things like checking balances, listing transfer partners, and viewing earning multipliers. If you have a complex question, please try again later when the API limit resets."
 
 def auto_discover_card_details(card_name: str) -> dict:
     """

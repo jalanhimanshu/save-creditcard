@@ -103,9 +103,9 @@ if not st.session_state.user_id:
             
             /* Make inputs look like the screenshot */
             input {
-                background-color: rgba(255, 255, 255, 0.1) !important;
-                color: white !important;
-                border: 1px solid rgba(255,255,255,0.2) !important;
+                background-color: white !important;
+                color: black !important;
+                border: 1px solid #ccc !important;
             }
             
             /* Custom Form Styling */
@@ -154,53 +154,102 @@ if not st.session_state.user_id:
         login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
         
         with login_tab:
-            l_user = st.text_input("Email Address", key="l_user")
-            l_pass = st.text_input("Password", type="password", key="l_pass")
-            st.markdown("<div style='text-align: right;'><a href='#' style='color: #4F46E5; font-size: 0.875rem; text-decoration: none;'>Forgot Password?</a></div>", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            if st.button("Sign In", use_container_width=True):
-                with get_db_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
-                    user = cursor.fetchone()
-                    if user:
-                        st.session_state.user_id = user[0]
-                        st.session_state.role = user[1]
-                        st.session_state.username = l_user
-                        
-                        new_token = str(uuid.uuid4())
-                        cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
-                        conn.commit()
-                        st.query_params['session_id'] = new_token
-                        st.rerun()
+            if st.session_state.get('show_forgot_password', False):
+                st.markdown("### Password Recovery")
+                f_user = st.text_input("Enter your Email Address", key="f_user")
+                
+                if st.button("Look up account"):
+                    if not f_user:
+                        st.error("Please enter your email")
                     else:
-                        st.error("Invalid username or password")
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT security_question FROM users WHERE username = ?", (f_user,))
+                            user = cursor.fetchone()
+                            if user and user[0]:
+                                st.session_state.recovery_user = f_user
+                                st.session_state.recovery_question = user[0]
+                            else:
+                                st.error("No security question found for this account. Please contact admin.")
+                
+                if st.session_state.get('recovery_question'):
+                    st.info(f"**Security Question:** {st.session_state.recovery_question}")
+                    f_answer = st.text_input("Your Answer", key="f_answer").strip().lower()
+                    new_pass = st.text_input("New Password", type="password", key="new_pass")
+                    
+                    if st.button("Reset Password"):
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT security_answer FROM users WHERE username = ?", (st.session_state.recovery_user,))
+                            correct_answer = cursor.fetchone()[0]
+                            if correct_answer and f_answer == correct_answer:
+                                cursor.execute("UPDATE users SET password_hash = ? WHERE username = ?", (hash_password(new_pass), st.session_state.recovery_user))
+                                conn.commit()
+                                st.success("Password reset successfully! Please sign in.")
+                                st.session_state.show_forgot_password = False
+                                st.session_state.recovery_question = None
+                            else:
+                                st.error("Incorrect security answer")
+
+                if st.button("Back to Login"):
+                    st.session_state.show_forgot_password = False
+                    st.session_state.recovery_question = None
+                    st.rerun()
+
+            else:
+                l_user = st.text_input("Email Address", key="l_user")
+                l_pass = st.text_input("Password", type="password", key="l_pass")
+                if st.button("Forgot Password?", type="tertiary"):
+                    st.session_state.show_forgot_password = True
+                    st.rerun()
+                st.markdown("<br>", unsafe_allow_html=True)
+                
+                if st.button("Sign In", use_container_width=True):
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
+                        user = cursor.fetchone()
+                        if user:
+                            st.session_state.user_id = user[0]
+                            st.session_state.role = user[1]
+                            st.session_state.username = l_user
+                            
+                            new_token = str(uuid.uuid4())
+                            cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                            conn.commit()
+                            st.query_params['session_id'] = new_token
+                            st.rerun()
+                        else:
+                            st.error("Invalid username or password")
             
-            st.markdown("""
-            <div style="display: flex; align-items: center; margin: 2rem 0;">
-                <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
-                <span style="padding: 0 1rem; opacity: 0.6; font-size: 0.875rem;">or continue with</span>
-                <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.button("Continue with Google", disabled=True, use_container_width=True)
+                st.markdown("""
+                <div style="display: flex; align-items: center; margin: 2rem 0;">
+                    <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
+                    <span style="padding: 0 1rem; opacity: 0.6; font-size: 0.875rem;">or continue with</span>
+                    <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.button("Continue with Google", disabled=True, use_container_width=True)
 
         with signup_tab:
             s_user = st.text_input("Email Address", key="s_user")
             s_pass = st.text_input("Choose Password", type="password", key="s_pass")
+            st.markdown("##### Security Verification")
+            s_question = st.selectbox("Security Question", ["What city were you born in?", "What is your mother's maiden name?", "What was the name of your first pet?", "What high school did you attend?"])
+            s_answer = st.text_input("Security Answer", key="s_answer").strip().lower()
             st.markdown("<br>", unsafe_allow_html=True)
             
             if st.button("Create Account", use_container_width=True):
-                if not s_user or not s_pass:
-                    st.error("Email and password are required")
+                if not s_user or not s_pass or not s_answer:
+                    st.error("All fields (including security answer) are required")
                 elif not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", s_user):
                     st.error("Please enter a valid email address")
                 else:
                     try:
                         with get_db_connection() as conn:
                             cursor = conn.cursor()
-                            cursor.execute("INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, 'user')", (s_user, hash_password(s_pass), s_user))
+                            cursor.execute("INSERT INTO users (username, password_hash, email, role, security_question, security_answer) VALUES (?, ?, ?, 'user', ?, ?)", 
+                                           (s_user, hash_password(s_pass), s_user, s_question, s_answer))
                             conn.commit()
                             
                             cursor.execute("SELECT user_id, role FROM users WHERE username = ?", (s_user,))
@@ -214,8 +263,11 @@ if not st.session_state.user_id:
                             conn.commit()
                             st.query_params['session_id'] = new_token
                             st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Email is already registered!")
+                    except Exception as e:
+                        if "unique constraint" in str(e).lower() or "integrity" in str(e).lower():
+                            st.error("Email is already registered!")
+                        else:
+                            st.error(f"Database error: {e}")
     st.stop()
 
 st.title("SavePoints Rewards Dashboard")
@@ -277,14 +329,19 @@ with tab1:
             pass
 
     with colB:
-        st.subheader("🐦 Live Social Media Alerts")
-        st.info("Scanning @card24_ai, @savingssimpl, @rewardsraja, @ccg33k every 60 mins.")
-        try:
-            with open("twitter_alerts.md", "r", encoding="utf-8") as f:
-                twitter_content = f.read()
-            st.markdown(twitter_content)
-        except FileNotFoundError:
-            st.write("Waiting for first 60-minute scan...")
+        st.subheader("📰 Live Deals & Updates")
+        
+        @st.cache_data(ttl=1800, show_spinner=False)
+        def get_deals():
+            from agents import fetch_local_flash_deals
+            return fetch_local_flash_deals()
+            
+        if st.button("🔄 Refresh Deals", use_container_width=True):
+            get_deals.clear()
+            st.rerun()
+            
+        deals_content = get_deals()
+        st.markdown(deals_content)
     
     # Fetch all cards dynamically
     with get_db_connection() as conn:
@@ -564,7 +621,7 @@ if st.session_state.role == 'admin':
         st.header("Admin Control Panel")
         
         with get_db_connection() as conn:
-            users_df = pd.read_sql_query("SELECT user_id, username, email, role FROM users", conn)
+            users_df = pd.read_sql_query("SELECT user_id, username, email, role, security_question, security_answer FROM users", conn)
         st.subheader("Registered Users")
         st.dataframe(users_df, use_container_width=True)
         
