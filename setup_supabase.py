@@ -1,179 +1,141 @@
 import psycopg2
-import contextlib
-import streamlit as st
+import os
+import hashlib
+try:
+    import toml
+except ImportError:
+    pass # we will parse it manually if needed
 
-class PostgresCursorWrapper:
-    def __init__(self, cursor):
-        self._cursor = cursor
-    
-    def execute(self, query, params=None):
-        # Convert SQLite ? parameters to PostgreSQL %s parameters
-        pg_query = query.replace("?", "%s")
-        return self._cursor.execute(pg_query, params)
-        
-    def fetchone(self):
-        return self._cursor.fetchone()
-        
-    def fetchall(self):
-        return self._cursor.fetchall()
-        
-    def executemany(self, query, params):
-        pg_query = query.replace("?", "%s")
-        return self._cursor.executemany(pg_query, params)
-        
-    def close(self):
-        self._cursor.close()
-        
-    @property
-    def rowcount(self):
-        return self._cursor.rowcount
-
-class PostgresConnectionWrapper:
-    def __init__(self, conn):
-        self._conn = conn
-        
-    def cursor(self):
-        return PostgresCursorWrapper(self._conn.cursor())
-        
-    def commit(self):
-        self._conn.commit()
-        
-    def close(self):
-        self._conn.close()
-        
-    def execute(self, query, params=None):
-        cursor = self.cursor()
-        cursor.execute(query, params)
-        return cursor
-
+# Simple manual parser since toml might not be installed
 def get_db_url():
     try:
-        return st.secrets["DB_URL"]
-    except Exception:
-        # Fallback if somehow secrets aren't loaded, though we expect them
-        return "postgresql://postgres:Samsung%40H1m%40nshu@db.oxjvyjbwttbbcsyxbmvz.supabase.co:5432/postgres"
-
-@contextlib.contextmanager
-def get_db_connection():
-    """Provides a safe database connection context pointing to Supabase."""
-    conn = psycopg2.connect(get_db_url())
-    try:
-        yield PostgresConnectionWrapper(conn)
-    finally:
-        conn.close()
+        with open('.streamlit/secrets.toml', 'r') as f:
+            for line in f:
+                if line.startswith('DB_URL'):
+                    return line.split('=', 1)[1].strip().strip('"').strip("'")
+    except Exception as e:
+        print("Error reading secrets.toml:", e)
+        return None
 
 def init_db():
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Create Tables
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                user_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE,
-                password_hash TEXT,
-                email TEXT,
-                role TEXT DEFAULT 'user'
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS session_tokens (
-                token TEXT PRIMARY KEY,
-                user_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(user_id) REFERENCES users(user_id)
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS card_metadata (
-                meta_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                card_name TEXT UNIQUE,
-                program TEXT,
-                reward_link TEXT
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_cards (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                meta_id INTEGER,
-                current_balance INTEGER,
-                spend_unit INTEGER,
-                UNIQUE(user_id, meta_id),
-                FOREIGN KEY(user_id) REFERENCES users(user_id),
-                FOREIGN KEY(meta_id) REFERENCES card_metadata(meta_id)
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS card_requests (
-                request_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                requested_card_name TEXT,
-                initial_balance INTEGER,
-                spend_unit INTEGER,
-                status TEXT DEFAULT 'pending',
-                FOREIGN KEY(user_id) REFERENCES users(user_id)
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS multipliers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                meta_id INTEGER,
-                category TEXT,
-                multiplier REAL,
-                FOREIGN KEY (meta_id) REFERENCES card_metadata (meta_id) ON DELETE CASCADE
-            )
-        ''')
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS transfer_partners (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                source_program TEXT,
-                target_partner TEXT,
-                transfer_ratio TEXT,
-                est_value_cpp REAL
-            )
-        ''')
-        
-        # AI Fallback Tracking Table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS unhandled_queries (
-                query_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                question TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        ''')
+    db_url = get_db_url()
+    if not db_url:
+        print("No DB_URL found!")
+        return
 
-        conn.commit()
+    print("Connecting to Supabase...")
+    conn = psycopg2.connect(db_url)
+    cursor = conn.cursor()
+    
+    # Create Tables
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE,
+            password_hash TEXT,
+            email TEXT,
+            role TEXT DEFAULT 'user'
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS session_tokens (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS card_metadata (
+            meta_id SERIAL PRIMARY KEY,
+            card_name TEXT UNIQUE,
+            program TEXT,
+            reward_link TEXT
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_cards (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            meta_id INTEGER,
+            current_balance INTEGER,
+            spend_unit INTEGER,
+            UNIQUE(user_id, meta_id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(meta_id) REFERENCES card_metadata(meta_id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS card_requests (
+            request_id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            requested_card_name TEXT,
+            initial_balance INTEGER,
+            spend_unit INTEGER,
+            status TEXT DEFAULT 'pending',
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS multipliers (
+            id SERIAL PRIMARY KEY,
+            meta_id INTEGER,
+            category TEXT,
+            multiplier REAL,
+            FOREIGN KEY (meta_id) REFERENCES card_metadata (meta_id) ON DELETE CASCADE
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS transfer_partners (
+            id SERIAL PRIMARY KEY,
+            source_program TEXT,
+            target_partner TEXT,
+            transfer_ratio TEXT,
+            est_value_cpp REAL
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS unhandled_queries (
+            query_id SERIAL PRIMARY KEY,
+            user_id INTEGER,
+            question TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (user_id)
+        )
+    ''')
+
+    conn.commit()
+    
+    cursor.execute("SELECT COUNT(*) FROM card_metadata")
+    if cursor.fetchone()[0] == 0:
+        print("Seeding database...")
+        seed_data(conn)
+    else:
+        print("Database already seeded.")
         
-        cursor.execute("SELECT COUNT(*) FROM card_metadata")
-        if cursor.fetchone()[0] == 0:
-            seed_data(conn)
+    conn.close()
 
 def seed_data(conn):
-    import hashlib
     cursor = conn.cursor()
     
     salt = "savepoints_salt_"
     admin_password = hashlib.sha256((salt + 'password@him').encode()).hexdigest()
     
     cursor.execute('''
-        INSERT OR IGNORE INTO users (username, password_hash, email, role)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO users (username, password_hash, email, role)
+        VALUES (%s, %s, %s, %s) ON CONFLICT (username) DO NOTHING
     ''', ('jalanhimanshu', admin_password, 'admin@savepoints.local', 'admin'))
     
     cursor.execute("SELECT user_id FROM users WHERE username = 'jalanhimanshu'")
     admin_id = cursor.fetchone()[0]
     
-    # Insert Global Catalog: name, program, reward_link
     cards_meta = [
         ('SBI Elite', 'SBI Rewardz', 'https://www.sbicard.com/en/personal/rewards.page'),
         ('BOB Eterna', 'BOB Rewardz', 'https://www.bobcard.co.in/credit-card-types/eterna'),
@@ -195,12 +157,11 @@ def seed_data(conn):
         ('Federal Scapia', 'Scapia Coins', 'https://www.federalbank.co.in/scapia-credit-card'),
         ('Equitas Selfe', 'Equitas Rewards', 'https://www.equitasbank.com/selfe-credit-card')
     ]
-    cursor.executemany("INSERT INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?)", cards_meta)
+    cursor.executemany("INSERT INTO card_metadata (card_name, program, reward_link) VALUES (%s, %s, %s) ON CONFLICT (card_name) DO NOTHING", cards_meta)
     
     cursor.execute("SELECT card_name, meta_id FROM card_metadata")
     meta_map = {name: id for name, id in cursor.fetchall()}
     
-    # Assign cards to Admin's Portfolio: user_id, meta_id, balance, spend_unit
     user_cards_data = [
         (admin_id, meta_map['SBI Elite'], 10000, 100),
         (admin_id, meta_map['BOB Eterna'], 5000, 100),
@@ -222,75 +183,56 @@ def seed_data(conn):
         (admin_id, meta_map['Federal Scapia'], 8000, 100),
         (admin_id, meta_map['Equitas Selfe'], 2500, 100)
     ]
-    cursor.executemany("INSERT INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (?, ?, ?, ?)", user_cards_data)
+    cursor.executemany("INSERT INTO user_cards (user_id, meta_id, current_balance, spend_unit) VALUES (%s, %s, %s, %s) ON CONFLICT (user_id, meta_id) DO NOTHING", user_cards_data)
     
     card_map = meta_map
     
-    # Insert Multipliers
     multipliers_data = [
         (card_map['SBI Elite'], 'dining', 10),
         (card_map['SBI Elite'], 'departmental_stores', 10),
         (card_map['SBI Elite'], 'catch_all', 2),
-        
         (card_map['BOB Eterna'], 'travel', 15),
         (card_map['BOB Eterna'], 'dining', 15),
         (card_map['BOB Eterna'], 'online_shopping', 15),
         (card_map['BOB Eterna'], 'catch_all', 3),
-        
         (card_map['HDFC Diners Black Privilege'], 'swiggy', 10),
         (card_map['HDFC Diners Black Privilege'], 'zomato', 10),
         (card_map['HDFC Diners Black Privilege'], 'catch_all', 4),
-        
         (card_map['HDFC Tata Neu'], 'tata_brands', 10),
         (card_map['HDFC Tata Neu'], 'catch_all', 1.5),
-        
         (card_map['HDFC Swiggy'], 'swiggy', 10),
         (card_map['HDFC Swiggy'], 'online_shopping', 5),
         (card_map['HDFC Swiggy'], 'catch_all', 1),
-        
         (card_map['Amex Platinum Travel'], 'catch_all', 1),
-        
         (card_map['HSBC Platinum'], 'dining', 5),
         (card_map['HSBC Platinum'], 'catch_all', 2),
-        
         (card_map['IDFC First Bank'], 'online_shopping', 6),
         (card_map['IDFC First Bank'], 'catch_all', 3),
-        
         (card_map['ICICI Coral'], 'dining', 4),
         (card_map['ICICI Coral'], 'catch_all', 2),
-        
         (card_map['ICICI Sapphiro'], 'international', 4),
         (card_map['ICICI Sapphiro'], 'catch_all', 2),
-        
         (card_map['ICICI Rupay'], 'upi', 2),
         (card_map['ICICI Rupay'], 'catch_all', 1),
-        
         (card_map['Adani One ICICI'], 'adani_ecosystem', 7),
         (card_map['Adani One ICICI'], 'catch_all', 1.5),
-        
         (card_map['ICICI MakeMyTrip'], 'mmt_bookings', 3),
         (card_map['ICICI MakeMyTrip'], 'catch_all', 1.25),
-        
         (card_map['IndusInd Indulge'], 'dining', 3),
         (card_map['IndusInd Indulge'], 'catch_all', 1.5),
-        
         (card_map['Yes Bank Reserv'], 'online_shopping', 6),
         (card_map['Yes Bank Reserv'], 'catch_all', 3),
-        
         (card_map['Kotak Bank PVR'], 'catch_all', 1),
-        
         (card_map['RBL IndianOil XtraPremium'], 'fuel', 10),
         (card_map['RBL IndianOil XtraPremium'], 'catch_all', 1),
-        
         (card_map['Federal Scapia'], 'travel', 4),
         (card_map['Federal Scapia'], 'catch_all', 2),
-        
         (card_map['Equitas Selfe'], 'dining', 2),
         (card_map['Equitas Selfe'], 'catch_all', 1)
     ]
-    cursor.executemany("INSERT INTO multipliers (meta_id, category, multiplier) VALUES (?, ?, ?)", multipliers_data)
+    cursor.execute("TRUNCATE TABLE multipliers RESTART IDENTITY")
+    cursor.executemany("INSERT INTO multipliers (meta_id, category, multiplier) VALUES (%s, %s, %s)", multipliers_data)
     
-    # Insert Transfer Partners
     transfer_partners_data = [
         ('Amex MR (India)', 'Taj Hotels', '2:1', 0.50),
         ('Amex MR (India)', 'Marriott Bonvoy', '1:1', 0.50),
@@ -327,13 +269,11 @@ def seed_data(conn):
         ('Equitas Rewards', 'Statement Credit', '5 Pts = ₹1', 0.20),
         ('Cashback', 'Statement Credit', '1 Pt = ₹1', 1.00)
     ]
-    cursor.executemany("INSERT INTO transfer_partners (source_program, target_partner, transfer_ratio, est_value_cpp) VALUES (?, ?, ?, ?)", transfer_partners_data)
+    cursor.execute("TRUNCATE TABLE transfer_partners RESTART IDENTITY")
+    cursor.executemany("INSERT INTO transfer_partners (source_program, target_partner, transfer_ratio, est_value_cpp) VALUES (%s, %s, %s, %s)", transfer_partners_data)
     
     conn.commit()
-    print("Database initialized and seeded with Indian market baseline data and URLs.")
+    print("Seeded successfully!")
 
 if __name__ == '__main__':
-    # Wipe the existing db if it exists
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
     init_db()

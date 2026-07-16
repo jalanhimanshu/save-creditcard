@@ -7,3 +7,4 @@ apscheduler
 python-dotenv
 requests
 streamlit-cookies-controller
+psycopg2-binary

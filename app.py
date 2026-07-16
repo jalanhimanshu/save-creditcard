@@ -62,18 +62,44 @@ if token and st.session_state.user_id is None:
             st.rerun()
 
 if not st.session_state.user_id:
-    # --- SAAS SPLIT-SCREEN LOGIN OVERRIDE ---
+    
+    # --- SAAS PLAIN BACKGROUND OVERRIDE ---
     st.markdown("""
         <style>
+            [data-testid="stAppViewContainer"] {
+                background-color: #e2e8f0;
+            }
             [data-testid="stAppViewBlockContainer"] {
-                padding: 0 !important;
+                padding-top: 5rem !important;
                 max-width: 100% !important;
             }
             [data-testid="stSidebar"] {
                 display: none;
             }
-            [data-testid="stHeader"] {
-                display: none;
+            header[data-testid="stHeader"] {
+                display: none !important;
+            }
+            
+            /* Style the center column exactly as a solid dark panel */
+            div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+                background: #111827 !important;
+                border-radius: 4px !important;
+                padding: 4rem 3rem !important;
+                box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5) !important;
+                border: none !important;
+            }
+            
+            /* Ensure clean text styling */
+            h1, p, label, .stTabs span {
+                color: #ffffff !important;
+                text-shadow: none !important;
+            }
+            
+            /* Make inputs look like the screenshot */
+            input {
+                background-color: rgba(255, 255, 255, 0.1) !important;
+                color: white !important;
+                border: 1px solid rgba(255,255,255,0.2) !important;
             }
             
             /* Custom Form Styling */
@@ -94,98 +120,96 @@ if not st.session_state.user_id:
                 color: white;
             }
             
-            /* Make the image touch the edges */
-            [data-testid="stImage"] img {
-                height: 100vh;
-                object-fit: cover;
+            /* Responsive adjustments for mobile */
+            @media (max-width: 768px) {
+                [data-testid="stAppViewBlockContainer"] {
+                    padding-top: 2rem !important;
+                }
+                div[data-testid="stHorizontalBlock"] > div:nth-child(2) {
+                    padding: 2rem 1.5rem !important;
+                    border-radius: 12px !important;
+                }
+                div[data-testid="stHorizontalBlock"] > div:first-child,
+                div[data-testid="stHorizontalBlock"] > div:last-child {
+                    display: none !important;
+                }
+                [data-testid="stAppViewContainer"] {
+                    background-position: right center !important;
+                }
             }
         </style>
     """, unsafe_allow_html=True)
-
-    col1, col2 = st.columns([1, 1], gap="collapse")
+    col1, col_form_c, col3 = st.columns([0.2, 1.4, 2.4])
     
-    with col1:
-        st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
-        col_form_l, col_form_c, col_form_r = st.columns([0.15, 0.7, 0.15])
-        with col_form_c:
-            st.markdown("<h1 style='text-align: center; color: #111827;'>Welcome Back</h1>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align: center; color: #6B7280; margin-bottom: 2rem;'>Sign in to continue to SavePoints.</p>", unsafe_allow_html=True)
+    with col_form_c:
+        st.markdown("<h1 style='text-align: center;'>Welcome Back</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; margin-bottom: 2rem; opacity: 0.7;'>Sign in to continue to SavePoints.</p>", unsafe_allow_html=True)
+        
+        login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
+        
+        with login_tab:
+            l_user = st.text_input("Email Address", key="l_user")
+            l_pass = st.text_input("Password", type="password", key="l_pass")
+            st.markdown("<div style='text-align: right;'><a href='#' style='color: #4F46E5; font-size: 0.875rem; text-decoration: none;'>Forgot Password?</a></div>", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             
-            login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
+            if st.button("Sign In", use_container_width=True):
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
+                    user = cursor.fetchone()
+                    if user:
+                        st.session_state.user_id = user[0]
+                        st.session_state.role = user[1]
+                        st.session_state.username = l_user
+                        
+                        new_token = str(uuid.uuid4())
+                        cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
+                        conn.commit()
+                        st.query_params['session_id'] = new_token
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
             
-            with login_tab:
-                l_user = st.text_input("Email Address", key="l_user")
-                l_pass = st.text_input("Password", type="password", key="l_pass")
-                st.markdown("<div style='text-align: right;'><a href='#' style='color: #4F46E5; font-size: 0.875rem; text-decoration: none;'>Forgot Password?</a></div>", unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                if st.button("Sign In", use_container_width=True):
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute("SELECT user_id, role FROM users WHERE username = ? AND password_hash = ?", (l_user, hash_password(l_pass)))
-                        user = cursor.fetchone()
-                        if user:
+            st.markdown("""
+            <div style="display: flex; align-items: center; margin: 2rem 0;">
+                <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
+                <span style="padding: 0 1rem; opacity: 0.6; font-size: 0.875rem;">or continue with</span>
+                <div style="flex-grow: 1; height: 1px; background-color: rgba(128,128,128,0.2);"></div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.button("Continue with Google", disabled=True, use_container_width=True)
+
+        with signup_tab:
+            s_user = st.text_input("Email Address", key="s_user")
+            s_pass = st.text_input("Choose Password", type="password", key="s_pass")
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            if st.button("Create Account", use_container_width=True):
+                if not s_user or not s_pass:
+                    st.error("Email and password are required")
+                elif not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", s_user):
+                    st.error("Please enter a valid email address")
+                else:
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, 'user')", (s_user, hash_password(s_pass), s_user))
+                            conn.commit()
+                            
+                            cursor.execute("SELECT user_id, role FROM users WHERE username = ?", (s_user,))
+                            user = cursor.fetchone()
                             st.session_state.user_id = user[0]
                             st.session_state.role = user[1]
-                            st.session_state.username = l_user
+                            st.session_state.username = s_user
                             
                             new_token = str(uuid.uuid4())
                             cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
                             conn.commit()
                             st.query_params['session_id'] = new_token
                             st.rerun()
-                        else:
-                            st.error("Invalid username or password")
-                
-                st.markdown("""
-                <div style="display: flex; align-items: center; margin: 2rem 0;">
-                    <div style="flex-grow: 1; height: 1px; background-color: #E5E7EB;"></div>
-                    <span style="padding: 0 1rem; color: #6B7280; font-size: 0.875rem;">or continue with</span>
-                    <div style="flex-grow: 1; height: 1px; background-color: #E5E7EB;"></div>
-                </div>
-                """, unsafe_allow_html=True)
-                st.button("Continue with Google", disabled=True, use_container_width=True)
-
-            with signup_tab:
-                s_user = st.text_input("Email Address", key="s_user")
-                s_pass = st.text_input("Choose Password", type="password", key="s_pass")
-                st.markdown("<br>", unsafe_allow_html=True)
-                
-                if st.button("Create Account", use_container_width=True):
-                    if not s_user or not s_pass:
-                        st.error("Email and password are required")
-                    elif not re.match(r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$", s_user):
-                        st.error("Please enter a valid email address")
-                    else:
-                        try:
-                            with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("INSERT INTO users (username, password_hash, email, role) VALUES (?, ?, ?, 'user')", (s_user, hash_password(s_pass), s_user))
-                                conn.commit()
-                                
-                                cursor.execute("SELECT user_id, role FROM users WHERE username = ?", (s_user,))
-                                user = cursor.fetchone()
-                                st.session_state.user_id = user[0]
-                                st.session_state.role = user[1]
-                                st.session_state.username = s_user
-                                
-                                new_token = str(uuid.uuid4())
-                                cursor.execute("INSERT INTO session_tokens (token, user_id) VALUES (?, ?)", (new_token, user[0]))
-                                conn.commit()
-                                st.query_params['session_id'] = new_token
-                                st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("Email is already registered!")
-
-    with col2:
-        try:
-            import base64
-            # We copied it to hero_image.png but sometimes local loading fails in col full-bleed. 
-            # We'll use standard st.image
-            st.image("hero_image.png", use_container_width=True)
-        except Exception:
-            pass
-            
+                    except sqlite3.IntegrityError:
+                        st.error("Email is already registered!")
     st.stop()
 
 st.title("SavePoints Rewards Dashboard")
@@ -636,7 +660,7 @@ if st.session_state.role == 'admin':
                         if m_program:
                             with get_db_connection() as conn:
                                 cursor = conn.cursor()
-                                cursor.execute("INSERT OR IGNORE INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?)",
+                                cursor.execute("INSERT INTO card_metadata (card_name, program, reward_link) VALUES (?, ?, ?) ON CONFLICT (card_name) DO NOTHING",
                                              (c_name, m_program, "Manual Entry"))
                                 cursor.execute("SELECT meta_id FROM card_metadata WHERE card_name = ?", (c_name,))
                                 meta_id = cursor.fetchone()[0]
