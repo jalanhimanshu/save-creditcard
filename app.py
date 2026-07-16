@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from database import get_db_connection
 import optimizer
-from agents import ask_savepoints_ai, auto_discover_card_details
+from ai_agents import ask_savepoints_ai, auto_discover_card_details
 import re
 
 st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
@@ -12,7 +12,7 @@ import threading
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def trigger_background_sync():
-    from agents import run_daily_market_sync, run_redemption_offer_sync, run_twitter_sync
+    from ai_agents import run_daily_market_sync, run_redemption_offer_sync, run_twitter_sync
     def run_sync_tasks():
         try:
             run_daily_market_sync()
@@ -333,7 +333,7 @@ with tab1:
         
         @st.cache_data(ttl=1800, show_spinner=False)
         def get_deals():
-            from agents import fetch_local_flash_deals
+            from ai_agents import fetch_local_flash_deals
             return fetch_local_flash_deals()
             
         if st.button("🔄 Refresh Deals", use_container_width=True):
