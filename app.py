@@ -30,45 +30,57 @@ components.html(
     <script>
     // Continuously hunt down Streamlit Cloud's dynamic injected buttons
     setInterval(function() {
-        var parentDoc = window.parent.document;
-        
-        // Hide the footer ('Hosted with Streamlit' link)
-        var footer = parentDoc.querySelector('footer');
-        if (footer) footer.style.display = 'none';
-        
-        // Target all known Deploy and Avatar button test IDs
-        var targets = [
-            '[data-testid="stAppDeployButton"]',
-            '[data-testid="stToolbar"]',
-            '[data-testid="stHostedWithStreamlitLink"]',
-            '[data-testid="stStatusWidget"]',
-            '.stAppDeployButton',
-            '.stGitHubBadge',
-            '[data-testid="stGithubBadge"]'
-        ];
-        
-        targets.forEach(function(selector) {
-            var elements = parentDoc.querySelectorAll(selector);
-            elements.forEach(function(el) {
-                el.style.display = 'none';
-                el.style.visibility = 'hidden';
-            });
-        });
-        
-        // Nuke ANY floating button in the bottom right corner (Streamlit's new cloud UI)
-        var allDivs = parentDoc.querySelectorAll('div');
-        allDivs.forEach(function(div) {
-            var style = window.getComputedStyle(div);
-            if (style.position === 'fixed' && style.bottom !== 'auto' && style.right !== 'auto' && parseInt(style.bottom) < 50 && parseInt(style.right) < 50) {
-                // If it's a fixed div in the bottom right corner, and it's small/button-like, KILL IT.
-                if (div.clientWidth < 150 && div.clientHeight < 150) {
-                    div.style.display = 'none';
-                    div.style.visibility = 'hidden';
+        try {
+            // First try the parent document in case we are in an accessible iframe
+            var docsToSearch = [window.document];
+            try {
+                if (window.parent && window.parent.document) {
+                    docsToSearch.push(window.parent.document);
                 }
-            }
-        });
-        
-    }, 500); // Check every 500ms permanently
+            } catch(e) {} // Ignore cross-origin frame errors
+            
+            docsToSearch.forEach(function(doc) {
+                // Hide the footer ('Hosted with Streamlit' link)
+                var footer = doc.querySelector('footer');
+                if (footer) footer.style.display = 'none';
+                
+                // Target all known Deploy and Avatar button test IDs
+                var targets = [
+                    '[data-testid="stAppDeployButton"]',
+                    '[data-testid="stToolbar"]',
+                    '[data-testid="stHostedWithStreamlitLink"]',
+                    '[data-testid="stStatusWidget"]',
+                    '.stAppDeployButton',
+                    '.stGitHubBadge',
+                    '[data-testid="stGithubBadge"]'
+                ];
+                
+                targets.forEach(function(selector) {
+                    var elements = doc.querySelectorAll(selector);
+                    elements.forEach(function(el) {
+                        el.style.display = 'none';
+                        el.style.visibility = 'hidden';
+                    });
+                });
+                
+                // Nuke ANY floating button in the bottom right corner
+                var allDivs = doc.querySelectorAll('div');
+                allDivs.forEach(function(div) {
+                    var style = window.getComputedStyle(div);
+                    if (style.position === 'fixed' && style.bottom !== 'auto' && style.right !== 'auto') {
+                        if (parseInt(style.bottom) < 50 && parseInt(style.right) < 50) {
+                            if (div.clientWidth < 150 && div.clientHeight < 150) {
+                                div.style.display = 'none';
+                                div.style.visibility = 'hidden';
+                            }
+                        }
+                    }
+                });
+            });
+        } catch(err) {
+            console.error("SavePoints UI Override Error: ", err);
+        }
+    }, 250); // Check extremely frequently
     </script>
     """,
     height=0,
