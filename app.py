@@ -91,7 +91,7 @@ import time
 import threading
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def trigger_background_sync():
+def trigger_background_sync_v2():
     from ai_agents import run_daily_market_sync, run_redemption_offer_sync, run_twitter_sync
     def run_sync_tasks():
         try:
@@ -104,7 +104,7 @@ def trigger_background_sync():
     thread.start()
     return time.time()
 
-current_sync_time = trigger_background_sync()
+current_sync_time = trigger_background_sync_v2()
 if 'last_toast_time' not in st.session_state or st.session_state['last_toast_time'] != current_sync_time:
     st.toast("🔄 Running hourly AI market sync in the background...")
     st.session_state['last_toast_time'] = current_sync_time
