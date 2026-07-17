@@ -67,14 +67,16 @@ if not st.session_state.user_id:
     st.markdown("""
         <style>
             #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
+            footer {visibility: hidden !important; display: none !important;}
             header {visibility: hidden !important; display: none !important;}
             [data-testid="viewerBadge"] {display: none !important;}
             div[class^="viewerBadge"] {display: none !important;}
             [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
             [data-testid="stAppDeployButton"] {display: none !important; visibility: hidden !important;}
             [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
+            [data-testid="stHostedWithStreamlitLink"] {display: none !important;}
             .stAppDeployButton {display: none !important;}
+            .stGithubBadge, .stGitHubBadge {display: none !important;}
             
             [data-testid="stAppViewContainer"] {
                 background-color: #e2e8f0;
