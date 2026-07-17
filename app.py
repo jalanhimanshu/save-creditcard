@@ -5,14 +5,14 @@ import optimizer
 from ai_agents import ask_savepoints_ai, auto_discover_card_details
 import re
 
-st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide", initial_sidebar_state="collapsed", menu_items={})
+st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide", initial_sidebar_state="expanded", menu_items={})
 
 # --- GLOBAL UI OVERRIDES TO NUKE STREAMLIT CLOUD BADGES ---
 st.markdown("""
     <style>
         #MainMenu {visibility: hidden !important;}
         footer {visibility: hidden !important; display: none !important;}
-        header {visibility: hidden !important; display: none !important;}
+        /* DO NOT hide header completely, it breaks the hamburger menu */
         [data-testid="viewerBadge"] {display: none !important;}
         div[class^="viewerBadge"] {display: none !important;}
         [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
@@ -28,32 +28,47 @@ import streamlit.components.v1 as components
 components.html(
     """
     <script>
-    // Use a timeout to ensure Streamlit Cloud's dynamic elements have loaded
-    setTimeout(function() {
+    // Continuously hunt down Streamlit Cloud's dynamic injected buttons
+    setInterval(function() {
         var parentDoc = window.parent.document;
         
-        // Hide the header (which contains the Avatar and Deploy button)
-        var header = parentDoc.querySelector('header');
-        if (header) header.style.display = 'none';
-        
-        // Hide the footer (which contains the 'Hosted with Streamlit' link)
+        // Hide the footer ('Hosted with Streamlit' link)
         var footer = parentDoc.querySelector('footer');
         if (footer) footer.style.display = 'none';
         
-        // Specifically target the Deploy button just in case it's floating
-        var deployBtn = parentDoc.querySelector('.stAppDeployButton');
-        if (deployBtn) deployBtn.style.display = 'none';
+        // Target all known Deploy and Avatar button test IDs
+        var targets = [
+            '[data-testid="stAppDeployButton"]',
+            '[data-testid="stToolbar"]',
+            '[data-testid="stHostedWithStreamlitLink"]',
+            '[data-testid="stStatusWidget"]',
+            '.stAppDeployButton',
+            '.stGitHubBadge',
+            '[data-testid="stGithubBadge"]'
+        ];
         
-        // Target the Hosted with Streamlit link specifically
-        var hostedLink = parentDoc.querySelector('[data-testid="stHostedWithStreamlitLink"]');
-        if (hostedLink) hostedLink.style.display = 'none';
-        
-        // Target all GitHub badges
-        var ghBadges = parentDoc.querySelectorAll('.stGitHubBadge, [data-testid="stGithubBadge"]');
-        ghBadges.forEach(function(badge) {
-            badge.style.display = 'none';
+        targets.forEach(function(selector) {
+            var elements = parentDoc.querySelectorAll(selector);
+            elements.forEach(function(el) {
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+            });
         });
-    }, 100);
+        
+        // Nuke ANY floating button in the bottom right corner (Streamlit's new cloud UI)
+        var allDivs = parentDoc.querySelectorAll('div');
+        allDivs.forEach(function(div) {
+            var style = window.getComputedStyle(div);
+            if (style.position === 'fixed' && style.bottom !== 'auto' && style.right !== 'auto' && parseInt(style.bottom) < 50 && parseInt(style.right) < 50) {
+                // If it's a fixed div in the bottom right corner, and it's small/button-like, KILL IT.
+                if (div.clientWidth < 150 && div.clientHeight < 150) {
+                    div.style.display = 'none';
+                    div.style.visibility = 'hidden';
+                }
+            }
+        });
+        
+    }, 500); // Check every 500ms permanently
     </script>
     """,
     height=0,
