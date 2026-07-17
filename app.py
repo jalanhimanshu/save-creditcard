@@ -5,7 +5,60 @@ import optimizer
 from ai_agents import ask_savepoints_ai, auto_discover_card_details
 import re
 
-st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide")
+st.set_page_config(page_title="SavePoints Dashboard (India)", layout="wide", initial_sidebar_state="collapsed", menu_items={})
+
+# --- GLOBAL UI OVERRIDES TO NUKE STREAMLIT CLOUD BADGES ---
+st.markdown("""
+    <style>
+        #MainMenu {visibility: hidden !important;}
+        footer {visibility: hidden !important; display: none !important;}
+        header {visibility: hidden !important; display: none !important;}
+        [data-testid="viewerBadge"] {display: none !important;}
+        div[class^="viewerBadge"] {display: none !important;}
+        [data-testid="stToolbar"] {display: none !important; visibility: hidden !important;}
+        [data-testid="stAppDeployButton"] {display: none !important; visibility: hidden !important;}
+        [data-testid="stStatusWidget"] {display: none !important; visibility: hidden !important;}
+        [data-testid="stHostedWithStreamlitLink"] {display: none !important;}
+        .stAppDeployButton {display: none !important;}
+        .stGithubBadge, .stGitHubBadge {display: none !important;}
+    </style>
+""", unsafe_allow_html=True)
+
+import streamlit.components.v1 as components
+components.html(
+    """
+    <script>
+    // Use a timeout to ensure Streamlit Cloud's dynamic elements have loaded
+    setTimeout(function() {
+        var parentDoc = window.parent.document;
+        
+        // Hide the header (which contains the Avatar and Deploy button)
+        var header = parentDoc.querySelector('header');
+        if (header) header.style.display = 'none';
+        
+        // Hide the footer (which contains the 'Hosted with Streamlit' link)
+        var footer = parentDoc.querySelector('footer');
+        if (footer) footer.style.display = 'none';
+        
+        // Specifically target the Deploy button just in case it's floating
+        var deployBtn = parentDoc.querySelector('.stAppDeployButton');
+        if (deployBtn) deployBtn.style.display = 'none';
+        
+        // Target the Hosted with Streamlit link specifically
+        var hostedLink = parentDoc.querySelector('[data-testid="stHostedWithStreamlitLink"]');
+        if (hostedLink) hostedLink.style.display = 'none';
+        
+        // Target all GitHub badges
+        var ghBadges = parentDoc.querySelectorAll('.stGitHubBadge, [data-testid="stGithubBadge"]');
+        ghBadges.forEach(function(badge) {
+            badge.style.display = 'none';
+        });
+    }, 100);
+    </script>
+    """,
+    height=0,
+    width=0,
+)
 
 import time
 import threading
