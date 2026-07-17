@@ -398,13 +398,14 @@ with tab1:
     
     colA, colB = st.columns(2)
     with colA:
-        try:
-            with open("market_report.md", "r", encoding="utf-8") as f:
-                market_content = f.read()
-            with st.expander("📉 **View Latest Market Devaluations & Alerts (from CardExpert.in)**", expanded=True):
-                st.markdown(market_content)
-        except FileNotFoundError:
-            pass
+        # [DEVELOPMENT HIDDEN] Market Intelligence section temporarily disabled
+        # try:
+        #     with open("market_report.md", "r", encoding="utf-8") as f:
+        #         market_content = f.read()
+        #     with st.expander("📉 **View Latest Market Devaluations & Alerts (from CardExpert.in)**", expanded=True):
+        #         st.markdown(market_content)
+        # except FileNotFoundError:
+        #     pass
         
         try:
             with open("latest_offers.md", "r", encoding="utf-8") as f:
